@@ -1,0 +1,118 @@
+{
+  "version": 2,
+  "month": "2023-10",
+  "label": "Cutting Focus for the First Week of November",
+  "profile_name": "Weekday rotation v3",
+  "source_profiles": {
+    "workout_template": "3-Day Full Body Strength & Conditioning with Focus on Pecs and Glutes",
+    "nutrition_profile": "Cutting Month Plan",
+    "supplements_profile": "Cutting Week Stack"
+  },
+  "days": {
+    "2023-10-30": {
+      "weekday": "monday",
+      "day_role": "rest",
+      "workout": {
+        "planned": false,
+        "day_key": null
+      },
+      "nutrition": {
+        "day_type_id": "rest_low_carb_1"
+      },
+      "supplements": {
+        "day_type_id": "rest_stack"
+      },
+      "notes": ""
+    },
+    "2023-10-31": {
+      "weekday": "tuesday",
+      "day_role": "training",
+      "workout": {
+        "planned": true,
+        "day_key": "monday"
+      },
+      "nutrition": {
+        "day_type_id": "training_heavy_1"
+      },
+      "supplements": {
+        "day_type_id": "training_stack"
+      },
+      "notes": ""
+    },
+    "2023-11-01": {
+      "weekday": "wednesday",
+      "day_role": "rest",
+      "workout": {
+        "planned": false,
+        "day_key": null
+      },
+      "nutrition": {
+        "day_type_id": "rest_low_carb_2"
+      },
+      "supplements": {
+        "day_type_id": "rest_stack"
+      },
+      "notes": ""
+    },
+    "2023-11-02": {
+      "weekday": "thursday",
+      "day_role": "training",
+      "workout": {
+        "planned": true,
+        "day_key": "wednesday"
+      },
+      "nutrition": {
+        "day_type_id": "training_heavy_2"
+      },
+      "supplements": {
+        "day_type_id": "training_stack"
+      },
+      "notes": ""
+    },
+    "2023-11-03": {
+      "weekday": "friday",
+      "day_role": "rest",
+      "workout": {
+        "planned": false,
+        "day_key": null
+      },
+      "nutrition": {
+        "day_type_id": "rest_low_carb_3"
+      },
+      "supplements": {
+        "day_type_id": "rest_stack"
+      },
+      "notes": ""
+    },
+    "2023-11-04": {
+      "weekday": "saturday",
+      "day_role": "training",
+      "workout": {
+        "planned": true,
+        "day_key": "friday"
+      },
+      "nutrition": {
+        "day_type_id": "training_heavy_3"
+      },
+      "supplements": {
+        "day_type_id": "training_stack"
+      },
+      "notes": ""
+    },
+    "2023-11-05": {
+      "weekday": "sunday",
+      "day_role": "rest",
+      "workout": {
+        "planned": false,
+        "day_key": null
+      },
+      "nutrition": {
+        "day_type_id": "rest_low_carb_1"
+      },
+      "supplements": {
+        "day_type_id": "rest_stack"
+      },
+      "notes": ""
+    }
+  }
+}

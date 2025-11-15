@@ -1,0 +1,331 @@
+{
+  "template_name": "Cutting Week Stack",
+  "days": {
+    "Monday": {
+      "day_type": "training",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Rhodiola Rosea",
+              "dose_mg": 400
+            },
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            },
+            {
+              "name": "Ashwagandha",
+              "dose_mg": 300
+            },
+            {
+              "name": "Maca Root",
+              "dose_mg": 3000
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": ""
+    },
+    "Tuesday": {
+      "day_type": "rest",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": "Break from all adaptogens."
+    },
+    "Wednesday": {
+      "day_type": "training",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Rhodiola Rosea",
+              "dose_mg": 400
+            },
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            },
+            {
+              "name": "Ashwagandha",
+              "dose_mg": 300
+            },
+            {
+              "name": "Maca Root",
+              "dose_mg": 3000
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": ""
+    },
+    "Thursday": {
+      "day_type": "rest",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": "Break from all adaptogens."
+    },
+    "Friday": {
+      "day_type": "training",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Rhodiola Rosea",
+              "dose_mg": 400
+            },
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            },
+            {
+              "name": "Ashwagandha",
+              "dose_mg": 300
+            },
+            {
+              "name": "Maca Root",
+              "dose_mg": 3000
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": ""
+    },
+    "Saturday": {
+      "day_type": "rest",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Rhodiola Rosea",
+              "dose_mg": 400
+            },
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            },
+            {
+              "name": "Ashwagandha",
+              "dose_mg": 300
+            },
+            {
+              "name": "Maca Root",
+              "dose_mg": 3000
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": ""
+    },
+    "Sunday": {
+      "day_type": "rest",
+      "on": true,
+      "protocol": [
+        {
+          "time": "On waking",
+          "items": [
+            {
+              "name": "Rhodiola Rosea",
+              "dose_mg": 400
+            },
+            {
+              "name": "Creatine monohydrate",
+              "dose_g": 5
+            }
+          ]
+        },
+        {
+          "time": "With first meal",
+          "items": [
+            {
+              "name": "Caffeine",
+              "dose_mg": 200
+            },
+            {
+              "name": "L-Theanine",
+              "dose_mg": 200
+            },
+            {
+              "name": "Ashwagandha",
+              "dose_mg": 300
+            },
+            {
+              "name": "Maca Root",
+              "dose_mg": 3000
+            }
+          ]
+        },
+        {
+          "time": "With dinner",
+          "items": [
+            {
+              "name": "Tribulus Terrestris",
+              "dose_mg": 1000
+            }
+          ]
+        }
+      ],
+      "notes": ""
+    }
+  }
+}
