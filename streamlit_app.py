@@ -4,9 +4,11 @@
 
 import streamlit as st
 from datetime import date
+from typing import List
 
 from daily_planner import get_daily_plan
 from expert_core import EXPERTS, start_expert_session, run_expert_turn
+from workout_log import load_workout_log, append_workout_entries
 
 
 st.set_page_config(page_title="Fitness Brain – Daily Planner", layout="wide")
@@ -14,7 +16,9 @@ st.set_page_config(page_title="Fitness Brain – Daily Planner", layout="wide")
 selected_date = date.today()
 with st.sidebar:
     st.title("Fitness Brain")
-    mode = st.radio("Mode", options=["Daily Planner", "Experts"], index=0)
+    mode = st.radio(
+        "Mode", options=["Daily Planner", "Experts", "Workout Log"], index=0
+    )
     if mode == "Daily Planner":
         selected_date = st.date_input("Select date", value=date.today())
 
@@ -193,9 +197,8 @@ def render_expert_chat():
         st.session_state["expert_sessions"] = {}
 
     if expert_key not in st.session_state["expert_sessions"]:
-        messages = start_expert_session(expert_key)
-        if isinstance(messages, tuple):
-            messages = messages[0]
+        init_result = start_expert_session(expert_key)
+        messages = init_result[0] if isinstance(init_result, tuple) else init_result
         st.session_state["expert_sessions"][expert_key] = {"messages": messages}
 
     session = st.session_state["expert_sessions"][expert_key]
@@ -242,7 +245,87 @@ def render_expert_chat():
         st.rerun()
 
 
+def render_workout_log():
+    st.sidebar.title("Workout Log")
+    selected_date = st.sidebar.date_input("Date", value=date.today())
+    date_str = selected_date.isoformat()
+
+    # Try to fetch the planned workout for this date using the existing planner logic
+    try:
+        plan = get_daily_plan(selected_date)
+        workout_info = plan.get("workout") or {}
+        planned_set = workout_info.get("exercises") or []
+    except Exception:
+        planned_set = []
+
+    st.markdown(f"## Workout log for {date_str}")
+
+    exercise_suggestions: List[str] = []
+    if planned_set:
+        st.subheader("Planned workout")
+        for ex in planned_set:
+            name = ex.get("name", "Exercise")
+            sets = ex.get("sets", "?")
+            reps = ex.get("reps", "?")
+            st.write(f"- {name} ({sets} x {reps})")
+            if name:
+                exercise_suggestions.append(name)
+    else:
+        st.info("No planned workout found for this date.")
+
+    st.subheader("Log performed sets")
+
+    form_key = f"workout_log_form_{date_str}"
+    with st.form(key=form_key):
+        exercise = st.selectbox(
+            "Exercise (from plan)",
+            options=["(type custom)"] + exercise_suggestions,
+            index=0,
+        )
+        custom_exercise = st.text_input("Or custom exercise name", "")
+
+        sets = st.number_input("Sets", min_value=1, max_value=20, value=3, step=1)
+        reps = st.number_input("Reps per set", min_value=1, max_value=50, value=10, step=1)
+        weight = st.number_input("Weight (kg)", min_value=0.0, max_value=500.0, value=0.0, step=0.5)
+        notes = st.text_area("Notes", "")
+
+        submitted = st.form_submit_button("Add to log")
+
+    if submitted:
+        exercise_name = custom_exercise.strip() or exercise
+        if not exercise_name or exercise_name == "(type custom)":
+            st.error("Please provide an exercise name (select from plan or type a custom one).")
+        else:
+            entry = {
+                "date": date_str,
+                "exercise": exercise_name,
+                "sets": int(sets),
+                "reps": int(reps),
+                "weight": float(weight),
+                "notes": notes.strip(),
+            }
+            append_workout_entries([entry])
+            st.success("Entry added to workout log.")
+            st.rerun()
+
+    st.subheader("Logged sets for this date")
+
+    all_entries = load_workout_log()
+    entries_for_date = [e for e in all_entries if e.get("date") == date_str]
+
+    if entries_for_date:
+        entries_for_date = sorted(
+            entries_for_date,
+            key=lambda e: (e.get("exercise", ""), e.get("sets", "")),
+        )
+        st.table(entries_for_date)
+    else:
+        st.info("No logged sets yet for this date.")
+
+
 if mode == "Daily Planner":
     render_daily_planner(selected_date)
-else:
+elif mode == "Experts":
     render_expert_chat()
+elif mode == "Workout Log":
+    render_workout_log()
