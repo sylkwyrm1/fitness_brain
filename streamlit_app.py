@@ -2,16 +2,157 @@
 # Run locally with:
 #   streamlit run streamlit_app.py
 
-import streamlit as st
+import time
 from datetime import date
-from typing import List
+from typing import Any, Dict, List, Optional, Tuple
+
+import streamlit as st
+import streamlit.components.v1 as components
 
 from daily_planner import get_daily_plan
 from expert_core import EXPERTS, start_expert_session, run_expert_turn
-from workout_log import load_workout_log, append_workout_entries
+from workout_log import append_workout_log_row, load_workout_log
 
 
-st.set_page_config(page_title="Fitness Brain – Daily Planner", layout="wide")
+def _planned_reps_to_int(val) -> int:
+    """Convert planned rep strings like '8' or '6-8' into an integer fallback."""
+    if val is None:
+        return 0
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        pass
+    if isinstance(val, str) and "-" in val:
+        parts = val.split("-")
+        try:
+            return int(parts[0].strip())
+        except (ValueError, IndexError):
+            return 0
+    return 0
+
+
+def build_planned_sets_for_date(selected_date: date) -> List[Dict[str, Any]]:
+    """Convert the saved workout plan for a date into per-set rows."""
+    try:
+        plan = get_daily_plan(selected_date)
+        workout_info = plan.get("workout") or {}
+        exercises = workout_info.get("exercises") or []
+    except Exception:
+        exercises = []
+
+    planned_rows: List[Dict[str, Any]] = []
+    for ex in exercises:
+        name = ex.get("name") or "Exercise"
+        sets = ex.get("sets", 0) or 0
+        reps = ex.get("reps", "")
+        rest_seconds = ex.get("rest_seconds")
+        target_rpe = ex.get("target_rpe")
+
+        try:
+            sets_int = int(sets)
+        except (TypeError, ValueError):
+            sets_int = 0
+
+        try:
+            rest_int = int(rest_seconds) if rest_seconds is not None else None
+        except (TypeError, ValueError):
+            rest_int = None
+
+        try:
+            target_rpe_val = float(target_rpe) if target_rpe is not None else None
+        except (TypeError, ValueError):
+            target_rpe_val = None
+
+        for set_idx in range(1, sets_int + 1):
+            planned_rows.append(
+                {
+                    "exercise": name,
+                    "set_number": set_idx,
+                    "planned_reps": str(reps),
+                    "rest_seconds": rest_int,
+                    "target_rpe": target_rpe_val,
+                }
+            )
+    return planned_rows
+
+
+def _planned_signature(planned_rows: List[Dict[str, Any]]) -> List[Tuple[Any, ...]]:
+    """Create a simple signature for the planned sets so we can detect changes."""
+    return [
+        (
+            row.get("exercise"),
+            row.get("set_number"),
+            row.get("planned_reps"),
+            row.get("rest_seconds"),
+            row.get("target_rpe"),
+        )
+        for row in planned_rows
+    ]
+
+
+def initialise_workout_state(selected_date: date, planned_rows: List[Dict[str, Any]]) -> None:
+    """Populate st.session_state for the session runner based on the selected date."""
+    date_str = selected_date.isoformat()
+    log_df = load_workout_log()
+    if not log_df.empty:
+        log_df = log_df[log_df["date"] == date_str]
+
+    sets_state: List[Dict[str, Any]] = []
+    for idx, row in enumerate(planned_rows):
+        log_entry = None
+        if not log_df.empty:
+            mask = (log_df["exercise"] == row["exercise"]) & (
+                log_df["set_number"].astype(str) == str(row["set_number"])
+            )
+            if mask.any():
+                log_entry = log_df[mask].iloc[0].to_dict()
+
+        status = "completed" if log_entry else "pending"
+        sets_state.append(
+            {
+                "index": idx,
+                "exercise": row["exercise"],
+                "set_number": row["set_number"],
+                "planned_reps": row["planned_reps"],
+                "rest_seconds": row.get("rest_seconds"),
+                "target_rpe": row.get("target_rpe"),
+                "status": status,
+                "log": log_entry,
+            }
+        )
+
+    pending_indices = [s["index"] for s in sets_state if s["status"] == "pending"]
+    current_index = pending_indices[0] if pending_indices else None
+
+    st.session_state["workout_state"] = {
+        "date": date_str,
+        "sets": sets_state,
+        "current_index": current_index,
+        "rest_active": False,
+        "rest_end_time": None,
+        "rest_exercise": None,
+        "plan_signature": _planned_signature(planned_rows),
+    }
+
+
+def move_to_next_pending_set(state: Dict[str, Any], after_index: Optional[int] = None) -> None:
+    """Advance the current set pointer to the next pending set."""
+    sets = state.get("sets", [])
+    pending = sorted(s["index"] for s in sets if s["status"] == "pending")
+    if not pending:
+        state["current_index"] = None
+        return
+
+    if after_index is not None:
+        for idx in pending:
+            if idx > after_index:
+                state["current_index"] = idx
+                return
+
+    state["current_index"] = pending[0]
+
+
+st.set_page_config(page_title="Fitness Brain - Daily Planner", layout="wide")
 
 selected_date = date.today()
 with st.sidebar:
@@ -250,78 +391,385 @@ def render_workout_log():
     selected_date = st.sidebar.date_input("Date", value=date.today())
     date_str = selected_date.isoformat()
 
-    # Try to fetch the planned workout for this date using the existing planner logic
-    try:
-        plan = get_daily_plan(selected_date)
-        workout_info = plan.get("workout") or {}
-        planned_set = workout_info.get("exercises") or []
-    except Exception:
-        planned_set = []
+    st.markdown(f"## Session for {date_str}")
 
-    st.markdown(f"## Workout log for {date_str}")
+    planned_rows = build_planned_sets_for_date(selected_date)
 
-    exercise_suggestions: List[str] = []
-    if planned_set:
-        st.subheader("Planned workout")
-        for ex in planned_set:
-            name = ex.get("name", "Exercise")
-            sets = ex.get("sets", "?")
-            reps = ex.get("reps", "?")
-            st.write(f"- {name} ({sets} x {reps})")
-            if name:
-                exercise_suggestions.append(name)
-    else:
-        st.info("No planned workout found for this date.")
+    full_log_df = load_workout_log()
 
-    st.subheader("Log performed sets")
+    def render_logged_sets_table() -> None:
+        """Show the historical log table for the current date."""
+        if full_log_df.empty:
+            st.info("No logged sets yet for this date.")
+            return
 
-    form_key = f"workout_log_form_{date_str}"
-    with st.form(key=form_key):
-        exercise = st.selectbox(
-            "Exercise (from plan)",
-            options=["(type custom)"] + exercise_suggestions,
-            index=0,
-        )
-        custom_exercise = st.text_input("Or custom exercise name", "")
+        date_df = full_log_df[full_log_df["date"] == date_str]
+        if date_df.empty:
+            st.info("No logged sets yet for this date.")
+            return
 
-        sets = st.number_input("Sets", min_value=1, max_value=20, value=3, step=1)
-        reps = st.number_input("Reps per set", min_value=1, max_value=50, value=10, step=1)
-        weight = st.number_input("Weight (kg)", min_value=0.0, max_value=500.0, value=0.0, step=0.5)
-        notes = st.text_area("Notes", "")
+        entries = date_df.to_dict("records")
 
-        submitted = st.form_submit_button("Add to log")
+        def sort_key(entry: Dict[str, Any]) -> Tuple[str, float]:
+            set_val = entry.get("set_number", 0)
+            try:
+                set_num = float(set_val)
+            except (TypeError, ValueError):
+                set_num = 0.0
+            return (str(entry.get("exercise", "")), set_num)
 
-    if submitted:
-        exercise_name = custom_exercise.strip() or exercise
-        if not exercise_name or exercise_name == "(type custom)":
-            st.error("Please provide an exercise name (select from plan or type a custom one).")
-        else:
-            entry = {
-                "date": date_str,
-                "exercise": exercise_name,
-                "sets": int(sets),
-                "reps": int(reps),
-                "weight": float(weight),
-                "notes": notes.strip(),
+        entries = sorted(entries, key=sort_key)
+        display_rows = [
+            {
+                "Exercise": e.get("exercise", ""),
+                "Set #": e.get("set_number", ""),
+                "Planned reps": e.get("planned_reps", ""),
+                "Actual reps": e.get("actual_reps", ""),
+                "Weight (kg)": e.get("weight", ""),
+                "RPE": e.get("rpe", ""),
+                "Notes": e.get("notes", ""),
             }
-            append_workout_entries([entry])
-            st.success("Entry added to workout log.")
-            st.rerun()
+            for e in entries
+        ]
+        st.table(display_rows)
 
-    st.subheader("Logged sets for this date")
+    if not planned_rows:
+        st.info("No planned workout found for this date.")
+        st.markdown("---")
+        st.subheader("Logged sets for this date")
+        render_logged_sets_table()
+        return
 
-    all_entries = load_workout_log()
-    entries_for_date = [e for e in all_entries if e.get("date") == date_str]
+    state = st.session_state.get("workout_state")
+    plan_signature = _planned_signature(planned_rows)
+    if (
+        state is None
+        or state.get("date") != date_str
+        or state.get("plan_signature") != plan_signature
+    ):
+        initialise_workout_state(selected_date, planned_rows)
+        state = st.session_state["workout_state"]
 
-    if entries_for_date:
-        entries_for_date = sorted(
-            entries_for_date,
-            key=lambda e: (e.get("exercise", ""), e.get("sets", "")),
+    # Rest timer (with live countdown)
+    if state.get("rest_active") and state.get("rest_end_time"):
+        remaining = int(round(state["rest_end_time"] - time.time()))
+        if remaining <= 0:
+            st.success("Rest finished - next set is ready.")
+            state["rest_active"] = False
+            state["rest_end_time"] = None
+            state["rest_exercise"] = None
+        else:
+            exercise_name = state.get("rest_exercise", "exercise")
+            components.html(
+                f"""
+                <div style="
+                    padding: 0.6rem 0.8rem;
+                    margin: 0.2rem 0 0.6rem 0;
+                    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    border-radius: 8px;
+                    background-color: rgba(255, 255, 255, 0.06);
+                    border: 1px solid rgba(255, 255, 255, 0.12);
+                    color: #f5f5f5;
+                    font-size: 0.9rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 0.75rem;
+                ">
+                  <div>
+                    Resting after <strong>{exercise_name}</strong>:
+                    <span id="rest-remaining">{remaining}</span> seconds remaining.
+                  </div>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <button id="rest-minus-30" style="
+                        padding: 0.2rem 0.5rem;
+                        border-radius: 6px;
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        background-color: rgba(255, 255, 255, 0.04);
+                        color: #f5f5f5;
+                        cursor: pointer;
+                        font-size: 0.8rem;
+                    ">-30s</button>
+                    <button id="rest-plus-30" style="
+                        padding: 0.2rem 0.5rem;
+                        border-radius: 6px;
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        background-color: rgba(255, 255, 255, 0.16);
+                        color: #f5f5f5;
+                        cursor: pointer;
+                        font-size: 0.8rem;
+                    ">+30s</button>
+                  </div>
+                </div>
+                <script>
+                (function() {{
+                    var remaining = {remaining};
+                    var el = document.getElementById("rest-remaining");
+                    if (!el) return;
+
+                    function beep() {{
+                        try {{
+                            var AudioContext = window.AudioContext || window.webkitAudioContext;
+                            if (!AudioContext) return;
+                            var ctx = new AudioContext();
+                            if (ctx.state === 'suspended' && ctx.resume) {{
+                                ctx.resume();
+                            }}
+                            var osc = ctx.createOscillator();
+                            var gainNode = ctx.createGain();
+                            osc.type = 'square';
+                            osc.frequency.value = 1000;
+                            osc.connect(gainNode);
+                            gainNode.connect(ctx.destination);
+                            gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+                            osc.start();
+                            gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.7);
+                            osc.stop(ctx.currentTime + 0.7);
+                        }} catch (e) {{
+                            console.log('Beep failed:', e);
+                        }}
+                    }}
+
+                    var minusBtn = document.getElementById("rest-minus-30");
+                    var plusBtn = document.getElementById("rest-plus-30");
+
+                    if (minusBtn) {{
+                        minusBtn.addEventListener("click", function() {{
+                            remaining = Math.max(0, remaining - 30);
+                            el.textContent = remaining;
+                        }});
+                    }}
+
+                    if (plusBtn) {{
+                        plusBtn.addEventListener("click", function() {{
+                            remaining = remaining + 30;
+                            el.textContent = remaining;
+                        }});
+                    }}
+
+                    var timer = setInterval(function() {{
+                        remaining -= 1;
+                        if (remaining <= 0) {{
+                            remaining = 0;
+                            clearInterval(timer);
+                            beep();
+                        }}
+                        el.textContent = remaining;
+                    }}, 1000);
+                }})();
+                </script>
+                """,
+                height=90,
+            )
+
+    sets_state: List[Dict[str, Any]] = state.get("sets", [])
+    total_sets = len(sets_state)
+    completed_sets = sum(1 for s in sets_state if s["status"] == "completed")
+    st.write(f"Progress: {completed_sets} / {total_sets} sets completed")
+
+    current_index = state.get("current_index")
+    current_set = next(
+        (s for s in sets_state if s["index"] == current_index), None
+    )
+    if current_set:
+        target_text = (
+            f" @ RPE {current_set['target_rpe']}"
+            if current_set.get("target_rpe") is not None
+            else ""
         )
-        st.table(entries_for_date)
+        st.write(
+            f"Current set: {current_set['exercise']} - Set {current_set['set_number']} "
+            f"(planned {current_set['planned_reps']} reps{target_text})"
+        )
     else:
-        st.info("No logged sets yet for this date.")
+        st.success("All sets completed for this date.")
 
+    # Build exercise grouping
+    exercise_order: List[str] = []
+    exercise_sets: Dict[str, List[Dict[str, Any]]] = {}
+    for set_state in sets_state:
+        exercise_name = set_state["exercise"]
+        exercise_sets.setdefault(exercise_name, []).append(set_state)
+        if exercise_name not in exercise_order:
+            exercise_order.append(exercise_name)
+
+    st.markdown("---")
+    st.subheader("Session runner")
+
+    date_prefix = date_str.replace("-", "")
+
+    for idx, exercise_name in enumerate(exercise_order):
+        sets_for_exercise = exercise_sets.get(exercise_name, [])
+        total_for_ex = len(sets_for_exercise)
+        completed_for_ex = sum(1 for s in sets_for_exercise if s["status"] == "completed")
+        has_current = any(s["index"] == current_index for s in sets_for_exercise)
+
+        header = f"{exercise_name} ({completed_for_ex}/{total_for_ex} sets completed)"
+        if has_current:
+            header = f"▶ {header}"
+
+        expanded_default = idx == 0 or has_current
+        with st.expander(header, expanded=expanded_default):
+            for set_state in sets_for_exercise:
+                set_number = set_state["set_number"]
+                planned_reps = set_state.get("planned_reps", "")
+                target_rpe = set_state.get("target_rpe")
+                rest_seconds = set_state.get("rest_seconds")
+                planned_label = (
+                    f"Set {set_number} - planned {planned_reps} reps"
+                    + (f" @ RPE {target_rpe}" if target_rpe is not None else "")
+                )
+                if rest_seconds:
+                    planned_label += f" | Rest {rest_seconds}s"
+
+                if set_state["status"] == "completed":
+                    log_entry = set_state.get("log") or {}
+                    actual_reps = log_entry.get("actual_reps", "")
+                    weight = log_entry.get("weight", "")
+                    actual_rpe = log_entry.get("rpe", "")
+                    notes = log_entry.get("notes", "")
+                    summary = (
+                        f"[done] {planned_label} - actual: {actual_reps} reps @ "
+                        f"{weight} kg, RPE {actual_rpe}"
+                    )
+                    if notes:
+                        summary += f" - notes: {notes}"
+                    st.markdown(summary)
+                    continue
+
+                idx_current = set_state["index"]
+                suggested_weight: Optional[float] = None
+                suggested_reps: Optional[int] = None
+                suggested_rpe: Optional[float] = None
+
+                previous_session_sets = [
+                    s
+                    for s in sets_state
+                    if s["exercise"] == exercise_name
+                    and s["status"] == "completed"
+                    and s["index"] < idx_current
+                    and s.get("log")
+                ]
+                if previous_session_sets:
+                    previous_session_sets.sort(key=lambda s: s["index"])
+                    last_log = previous_session_sets[-1].get("log") or {}
+                    suggested_weight = last_log.get("weight")
+                    suggested_reps = last_log.get("actual_reps")
+                    suggested_rpe = last_log.get("rpe")
+
+                if (
+                    (suggested_weight is None or suggested_reps is None or suggested_rpe is None)
+                    and not full_log_df.empty
+                ):
+                    ex_df = full_log_df[full_log_df["exercise"] == exercise_name]
+                    if not ex_df.empty:
+                        last_row = ex_df.iloc[-1]
+                        if suggested_weight is None:
+                            suggested_weight = last_row.get("weight")
+                        if suggested_reps is None:
+                            suggested_reps = last_row.get("actual_reps")
+                        if suggested_rpe is None:
+                            suggested_rpe = last_row.get("rpe")
+
+                if suggested_weight is None:
+                    suggested_weight = 0.0
+                if suggested_reps is None:
+                    suggested_reps = _planned_reps_to_int(planned_reps)
+                if suggested_rpe is None:
+                    trpe = set_state.get("target_rpe")
+                    suggested_rpe = float(trpe) if trpe is not None else 7.0
+
+                try:
+                    suggested_weight = float(suggested_weight)
+                except (TypeError, ValueError):
+                    suggested_weight = 0.0
+
+                try:
+                    suggested_reps = int(suggested_reps)
+                except (TypeError, ValueError):
+                    suggested_reps = 0
+                if suggested_reps < 0:
+                    suggested_reps = 0
+
+                try:
+                    suggested_rpe = float(suggested_rpe)
+                except (TypeError, ValueError):
+                    suggested_rpe = 7.0
+                suggested_rpe = max(0.0, min(10.0, suggested_rpe))
+
+                st.markdown(planned_label)
+                input_cols = st.columns([1, 1, 1])
+                base_key = f"{date_prefix}_{exercise_name}_{set_number}"
+                weight_val = input_cols[0].number_input(
+                    "Weight (kg)",
+                    min_value=0.0,
+                    max_value=500.0,
+                    value=float(suggested_weight),
+                    step=0.5,
+                    key=f"weight_{base_key}",
+                )
+                actual_reps_val = input_cols[1].number_input(
+                    "Actual reps",
+                    min_value=0,
+                    max_value=100,
+                    value=int(suggested_reps),
+                    step=1,
+                    key=f"reps_{base_key}",
+                )
+                actual_rpe_val = input_cols[2].number_input(
+                    "Actual RPE",
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=float(suggested_rpe),
+                    step=0.5,
+                    key=f"rpe_{base_key}",
+                )
+                notes_val = st.text_input(
+                    "Notes (optional)", value="", key=f"notes_{base_key}"
+                )
+                log_clicked = st.button(
+                    "✓ Log set",
+                    key=f"log_{base_key}",
+                )
+
+                if log_clicked:
+                    if weight_val <= 0 or actual_reps_val <= 0 or actual_rpe_val <= 0:
+                        st.warning("Please enter positive weight, reps, and RPE before logging.")
+                        continue
+
+                    row = {
+                        "date": date_str,
+                        "exercise": exercise_name,
+                        "set_number": set_number,
+                        "planned_reps": planned_reps,
+                        "actual_reps": int(actual_reps_val),
+                        "weight": float(weight_val),
+                        "rpe": float(actual_rpe_val),
+                        "notes": notes_val.strip(),
+                    }
+                    append_workout_log_row(row)
+
+                    set_state["status"] = "completed"
+                    set_state["log"] = row
+
+                    rest_seconds_val = rest_seconds or 0
+                    if rest_seconds_val > 0:
+                        state["rest_active"] = True
+                        state["rest_end_time"] = time.time() + rest_seconds_val
+                        state["rest_exercise"] = exercise_name
+                    else:
+                        state["rest_active"] = False
+                        state["rest_end_time"] = None
+                        state["rest_exercise"] = None
+
+                    state["current_index"] = set_state["index"]
+                    move_to_next_pending_set(state, after_index=set_state["index"])
+                    st.success(f"Logged {exercise_name} - Set {set_number}.")
+                    st.rerun()
+
+    st.markdown("---")
+    st.subheader("Logged sets for this date")
+    render_logged_sets_table()
 
 if mode == "Daily Planner":
     render_daily_planner(selected_date)

@@ -4,3 +4,12 @@ __pycache__/
 .DS_Store
 .streamlit/secrets.toml
 
+.env
+# ---- fitness_brain local state (do not commit) ----
+biometrics.json
+workout.json
+nutrition.json
+supplements.json
+
+data/raw/workout_log.csv
+data/processed/workout_history.json

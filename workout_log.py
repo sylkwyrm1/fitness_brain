@@ -1,63 +1,45 @@
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 from typing import Any, Dict, List
 
-DATA_DIR = Path("data")
+import pandas as pd
+
+DATA_DIR = Path("data") / "raw"
 LOG_PATH = DATA_DIR / "workout_log.csv"
+COLUMNS = ["date", "exercise", "set_number", "planned_reps", "actual_reps", "weight", "rpe", "notes"]
 
 
-def load_workout_log() -> List[Dict[str, str]]:
+def load_workout_log() -> pd.DataFrame:
     """
-    Load the entire workout log from CSV.
-
-    Returns a list of dicts with keys:
-    - date (YYYY-MM-DD)
-    - exercise
-    - sets
-    - reps
-    - weight
-    - notes
+    Load the workout log as a pandas DataFrame with the expected columns.
     """
     if not LOG_PATH.exists():
-        return []
+        return pd.DataFrame(columns=COLUMNS)
 
-    with LOG_PATH.open("r", newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        return list(reader)
+    df = pd.read_csv(LOG_PATH)
+    for col in COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    return df[COLUMNS]
 
 
-def append_workout_entries(entries: List[Dict[str, Any]]) -> None:
+def append_workout_log_row(row: Dict[str, Any]) -> None:
     """
-    Append one or more entries to the workout log.
-
-    Each entry should contain:
-    - date (YYYY-MM-DD string)
-    - exercise (str)
-    - sets (int or str)
-    - reps (int or str)
-    - weight (float or str)
-    - notes (str, optional)
+    Append a single row to the workout log CSV.
     """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df = load_workout_log()
+    normalized = {col: row.get(col, "") for col in COLUMNS}
+    new_df = pd.DataFrame([normalized])
+    if df.empty:
+        combined = new_df
+    else:
+        combined = pd.concat([df, new_df], ignore_index=True)
+    combined.to_csv(LOG_PATH, index=False)
 
-    fieldnames = ["date", "exercise", "sets", "reps", "weight", "notes"]
-    file_exists = LOG_PATH.exists()
 
-    with LOG_PATH.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-
-        for e in entries:
-            writer.writerow(
-                {
-                    "date": str(e.get("date", "")),
-                    "exercise": str(e.get("exercise", "")),
-                    "sets": str(e.get("sets", "")),
-                    "reps": str(e.get("reps", "")),
-                    "weight": str(e.get("weight", "")),
-                    "notes": str(e.get("notes", "")),
-                }
-            )
+# Backwards compatibility helpers (if older code still imports them)
+def append_workout_entries(entries: List[Dict[str, Any]]) -> None:
+    for entry in entries:
+        append_workout_log_row(entry)

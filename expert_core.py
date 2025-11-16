@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from state_utils import load_workout_history
 # Load API key from .env
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -46,6 +47,7 @@ def load_shared_state() -> Dict[str, Any]:
         "nutrition": load_json(NUTRITION_FILE, default={}),
         "supplements": load_json(SUPPLEMENTS_FILE, default={}),
         "planner": load_json(PLANNER_FILE, default={}),
+        "workout_history": load_workout_history(),
     }
 
 
@@ -228,6 +230,9 @@ Phase 1: Conversation
   - Match training volume and intensity to the user's conditioning and goals,
   - Be aware of fasted vs non-fasted sessions,
   - Consider stimulant timing (e.g. pre-workout caffeine) when you suggest training times.
+- shared_state may also include 'workout_history', a derived summary from past logged sessions.
+  - Use it to understand recent per-exercise performance (sets per day, avg weight/reps/RPE, top sets).
+  - Treat it as strictly read-only. Never attempt to modify or overwrite workout_history yourself; only reference it for trends.
 - Do NOT output JSON during normal conversation; use plain text.
 
 Phase 2: Save (JSON summary)
@@ -244,14 +249,14 @@ The JSON summary MUST follow this structure:
     "Monday": {
       "focus": "Upper Power",
       "exercises": [
-        { "name": "Bench Press", "sets": 4, "reps": 6 },
-        { "name": "Bent Over Row", "sets": 4, "reps": 6 }
+        { "name": "Bench Press", "sets": 4, "reps": 6, "rest_seconds": 150, "target_rpe": 8.0 },
+        { "name": "Bent Over Row", "sets": 4, "reps": 6, "rest_seconds": 120, "target_rpe": 8.0 }
       ]
     },
     "Tuesday": {
       "focus": "Lower Power",
       "exercises": [
-        { "name": "Squat", "sets": 4, "reps": 6 }
+        { "name": "Squat", "sets": 4, "reps": 6, "rest_seconds": 180, "target_rpe": 8.5 }
       ]
     }
     // ...other days...
@@ -261,6 +266,16 @@ The JSON summary MUST follow this structure:
 Rules:
 - Every training day must have a 'focus' and an 'exercises' list.
 - Exercises should have 'name', 'sets', and 'reps' OR 'duration' (for things like planks or cardio).
+- Every exercise MUST include:
+  - 'rest_seconds' integer representing rest between working sets.
+    * Heavy compound lifts (squat, deadlift, bench, etc.): 150–180 seconds by default.
+    * Other compound lifts (rows, overhead press, etc.): roughly 90–120 seconds.
+    * Isolation/accessory lifts (curls, lateral raises, etc.): roughly 60–90 seconds.
+    * Rest times stay constant for all sets of the same exercise (one rest_seconds per exercise).
+  - 'target_rpe' (float 1.0–10.0) indicating intended effort for each working set of that exercise.
+    * 6.0–7.0 for easier or warm-up style sets.
+    * 7.5–9.0 for main working sets on compound lifts/accessories.
+    * Rarely above 9.0 (near failure). Keep one target_rpe per exercise, not per set.
 - Rest days can be omitted or represented as { "focus": "Rest", "exercises": [] }.
 
 During JSON summary mode:
