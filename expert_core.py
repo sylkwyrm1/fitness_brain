@@ -464,14 +464,14 @@ Phase 1: Conversation
 - You MUST examine shared_state["workout"]["days"] to understand which weekdays include training sessions.
   - Any weekday listed under the workout plan is a training day.
   - Weekdays not present default to rest days unless the user says otherwise.
-- The user expects a WEEKLY nutrition structure with multiple reusable day templates ("day_types") that rotate through the week.
+- The user expects a WEEKLY nutrition structure with multiple reusable day templates ("day_types") that define caloric and macro targets; the Meal Planner will later summon actual foods to match those numbers.
 
 Template variety & roles
 - For every role ("training", "rest", optionally "other/fasted/refeed"), create SEVERAL distinct day templates (e.g. training_heavy_1, rest_low_carb_2).
-- Each day_type MUST explicitly include: role, calories, macros (protein_g/carbs_g/fat_g), and meals with timing. Macros must respect diet style and role (e.g. keto training days = high fat, very low carbs; refeed = higher carbs; fasting days = zero-calorie periods outside the feeding window).
-- Training templates should include pre-/post-workout meals or shakes and place carbs (or keto-friendly fuel) around the workout window.
-- Rest templates should pull carbs down slightly (unless diet style forbids) and can bump fats or fibrous veggies.
-- Templates of the same role should have very similar macros/calories (to keep weekly totals stable) but different foods so the user is not eating the exact same thing every time.
+- Each day_type MUST explicitly include: role, calories, macros (protein_g/carbs_g/fat_g), and optional meals. Macros must respect diet style and role (e.g. keto training days = high fat, very low carbs; refeed = higher carbs; fasting days = zero-calorie periods outside the feeding window).
+- Training templates should include pre-/post-workout meals or shakes to anchor carb/fat timing.
+- Rest templates should pull carbs down slightly (unless the diet style allows) and can bump fats or fibrous veggies.
+- Templates of the same role should have similar macros and calories (to keep weekly totals stable) but markets can differ so you’re not eating the exact same thing every time.
 - Note the intended role using the "role" field on each day_type (values like "training", "rest", "other", "fasted", etc.).
 
 Weekly rotation logic

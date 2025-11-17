@@ -16,7 +16,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from daily_planner import get_daily_plan
-from expert_core import EXPERTS, start_expert_session, run_expert_turn
+from expert_core import (
+    EXPERTS,
+    start_expert_session,
+    run_expert_turn,
+    load_json,
+    save_json,
+    NUTRITION_FILE,
+)
 
 try:
     from expert_core import build_shared_state
@@ -1062,6 +1069,72 @@ def render_expert_hub(shared_state: Dict[str, Any]) -> None:
     render_expert_chat()
 
 
+SLOT_MAP: Dict[str, List[str]] = {
+    "training": ["breakfast", "lunch", "dinner"],
+    "rest": ["breakfast", "lunch", "dinner"],
+    "fasted": ["lunch", "dinner"],
+    "other": ["breakfast", "lunch", "dinner"],
+}
+
+
+def _collect_recipe_candidates(recipes: Dict[str, Any]) -> Dict[str, List[str]]:
+    role_map: Dict[str, List[str]] = {}
+    for rid, recipe in recipes.items():
+        tags = [str(tag).lower() for tag in (recipe.get("tags") or [])]
+        for tag in tags:
+            role_map.setdefault(tag, []).append(rid)
+    return role_map
+
+
+def _select_recipe(
+    candidates: List[str],
+    recipes: Dict[str, Any],
+    used: set[str],
+    diet_style: str | None,
+) -> str | None:
+    style = (diet_style or "").lower().strip()
+    for rid in candidates:
+        if rid in used:
+            continue
+        recipe = recipes.get(rid)
+        if not recipe:
+            continue
+        tags = [str(tag).lower() for tag in (recipe.get("tags") or [])]
+        if style and style in tags:
+            return rid
+    for rid in candidates:
+        if rid not in used:
+            return rid
+    return None
+
+
+def _build_recipe_links(
+    nutrition_plan: Dict[str, Any],
+    recipes: Dict[str, Any],
+    preferences: Dict[str, Any],
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    day_types = nutrition_plan.get("day_types") or {}
+    if not day_types:
+        return {}
+    recipe_candidates = _collect_recipe_candidates(recipes)
+    diet_style = (preferences.get("global") or {}).get("diet_style")
+    links: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for day_type_id, info in day_types.items():
+        role = (info.get("role") or "other").lower()
+        slots = SLOT_MAP.get(role, SLOT_MAP["other"])
+        used_ids: set[str] = set()
+        day_links: Dict[str, Dict[str, Any]] = {}
+        for slot in slots:
+            candidates = recipe_candidates.get(role, []) + recipe_candidates.get("other", [])
+            recipe_id = _select_recipe(candidates, recipes, used_ids, diet_style)
+            if recipe_id:
+                day_links[slot] = {"recipe_id": recipe_id, "servings": 1}
+                used_ids.add(recipe_id)
+        if day_links:
+            links[day_type_id] = day_links
+    return links
+
+
 def render_planners(shared_state: Dict[str, Any]) -> None:
     st.header("Planners")
     st.caption("Shape the reusable building blocks for your program.")
@@ -1100,18 +1173,42 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
                 for day_key, info in day_types.items():
                     role = (info.get("role") or "other").title()
                     role_groups.setdefault(role, []).append((day_key, info))
-                st.markdown("**Templates by role**")
-                for role, entries in role_groups.items():
-                    st.write(f"- {role}: {len(entries)} template(s)")
-                    for key, info in entries:
-                        macros = info.get("macros") or {}
-                        calories = info.get("calories", "-")
-                        st.caption(
-                            f"    • {key}: {calories} kcal | "
-                            f"P {macros.get('protein_g', '-')}/"
-                            f"C {macros.get('carbs_g', '-')}/"
-                            f"F {macros.get('fat_g', '-')}"
+            st.markdown("**Templates by role**")
+            for role, entries in role_groups.items():
+                st.write(f"- {role}: {len(entries)} template(s)")
+                for key, info in entries:
+                    macros = info.get("macros") or {}
+                    calories = info.get("calories", "-")
+                    st.caption(
+                        f"    • {key}: {calories} kcal | "
+                        f"P {macros.get('protein_g', '-')}/"
+                        f"C {macros.get('carbs_g', '-')}/"
+                        f"F {macros.get('fat_g', '-')}"
+                    )
+            generate_from_recipes = st.button(
+                "Populate meals from recipes",
+                use_container_width=True,
+            )
+            if generate_from_recipes:
+                recipes = load_recipes()
+                if not recipes:
+                    st.warning(
+                        "You need at least one recipe saved (use the Recipes expert) before Meal Planner can populate meals."
+                    )
+                else:
+                    nutrition_data = load_json(NUTRITION_FILE, nutrition_plan)
+                    new_links = _build_recipe_links(
+                        nutrition_data, recipes, shared_state.get("preferences") or {}
+                    )
+                    if not new_links:
+                        st.warning(
+                            "No matching recipes were found for the current day type roles."
                         )
+                    else:
+                        nutrition_data["recipe_links"] = new_links
+                        save_json(NUTRITION_FILE, nutrition_data)
+                        shared_state["nutrition"] = nutrition_data
+                        st.success("Meal rotation saved via nutrition.json")
         else:
             st.info("No nutrition plan saved yet. Chat with the Nutrition expert to build one.")
 
