@@ -1094,6 +1094,24 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
             active = nutrition_plan.get("active_weekly_plan")
             if active:
                 st.write(f"**Active weekly rotation:** {active}")
+            day_types = nutrition_plan.get("day_types", {})
+            if day_types:
+                role_groups: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
+                for day_key, info in day_types.items():
+                    role = (info.get("role") or "other").title()
+                    role_groups.setdefault(role, []).append((day_key, info))
+                st.markdown("**Templates by role**")
+                for role, entries in role_groups.items():
+                    st.write(f"- {role}: {len(entries)} template(s)")
+                    for key, info in entries:
+                        macros = info.get("macros") or {}
+                        calories = info.get("calories", "-")
+                        st.caption(
+                            f"    • {key}: {calories} kcal | "
+                            f"P {macros.get('protein_g', '-')}/"
+                            f"C {macros.get('carbs_g', '-')}/"
+                            f"F {macros.get('fat_g', '-')}"
+                        )
         else:
             st.info("No nutrition plan saved yet. Chat with the Nutrition expert to build one.")
 
