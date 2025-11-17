@@ -1000,11 +1000,12 @@ Phase 2: Save
 """,
         "json_save_instruction": """Now ignore normal conversation style.
 
-You have access to planner.json plus shared_state (biometrics, workout, nutrition, supplements, preferences).
-Construct the FINAL planner.json where:
-- Only the workout sections you discussed are modified.
-- Nutrition and supplements blocks remain untouched unless the user specifically asked you to coordinate them.
-- Include "_preferences_updates" if new scheduling preferences arose.
+You must output EXACTLY ONE JSON object representing planner.json (version 2) with only the workout/day_role changes we agreed on.
+
+Rules:
+- No Markdown, no backticks, no explanatory text—just the JSON object.
+- Copy the existing planner.json structure, modifying only the workout-related fields you touched.
+- If you include "_preferences_updates", keep it at the top level alongside planner.json keys.
 
 Output ONLY valid JSON. No extra text.""",
     },
@@ -1032,11 +1033,12 @@ Phase 2: Save
 """,
         "json_save_instruction": """Now ignore normal conversation style.
 
-You have the previous nutrition.json plus shared_state (biometrics, workout, nutrition, supplements, recipes, preferences).
-Construct the FINAL nutrition.json object that:
-- Preserves macros/day_types.
-- Replaces or adds "recipe_links" to capture our agreed meals.
-- Includes "_preferences_updates" for new meal preferences if applicable.
+Output EXACTLY one JSON object representing the full nutrition.json (version 3) with the recipe_links updates we discussed.
+
+Rules:
+- No commentary, no backticks—just the JSON object.
+- Copy all existing fields (version, day_types, weekly_plans, etc.) and edit only recipe_links plus optional "_preferences_updates".
+- Use only recipes that exist in shared_state["recipes"].
 
 Output ONLY valid JSON. No extra text.""",
     },

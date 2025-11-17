@@ -407,41 +407,19 @@ def render_daily_planner(selected_date: date):
             st.info(messages.get("planner") or "No planner metadata for this day.")
 
 
-def render_expert_chat():
-    st.sidebar.title("Experts")
+def _render_expert_conversation_block(
+    expert_key: str, heading: str, chat_key: str, button_key: str
+) -> None:
     global shared_state
 
-    # Choose expert
-    expert_key = st.sidebar.selectbox(
-        "Choose expert",
-        options=[
-            "biometrics",
-            "workout",
-            "workout_planner",
-            "nutrition",
-            "meal_planner",
-            "supplements",
-            "recipes",
-            "pantry",
-            "planner",
-        ],
-        format_func=lambda x: x.capitalize(),
-    )
-
-    # Session state: one message history per expert
-    if "expert_sessions" not in st.session_state:
-        st.session_state["expert_sessions"] = {}
-
-    if expert_key not in st.session_state["expert_sessions"]:
+    st.markdown(f"#### {heading}")
+    session_store = st.session_state.setdefault("expert_sessions_blocks", {})
+    if expert_key not in session_store:
         init_result = start_expert_session(expert_key)
         messages = init_result[0] if isinstance(init_result, tuple) else init_result
-        st.session_state["expert_sessions"][expert_key] = {"messages": messages}
+        session_store[expert_key] = {"messages": messages}
 
-    session = st.session_state["expert_sessions"][expert_key]
-    messages = session["messages"]
-
-    # Chat history
-    st.markdown(f"### {expert_key.capitalize()} Expert")
+    messages = session_store[expert_key]["messages"]
 
     for msg in messages:
         role = msg.get("role")
@@ -449,31 +427,23 @@ def render_expert_chat():
         if not content:
             continue
         if role == "assistant":
-            st.markdown(f"**{expert_key.capitalize()} Expert:** {content}")
+            st.markdown(f"**{expert_key.replace('_', ' ').title()} Expert:** {content}")
         elif role == "user":
             st.markdown(f"**You:** {content}")
 
-    # Chat input
-    user_text = st.chat_input("Type your message")
-
-    # Normal message send
+    user_text = st.chat_input("Type your message", key=chat_key)
     if user_text:
         new_messages, assistant_text, saved = run_expert_turn(
-            expert_key,
-            messages,
-            user_text,
+            expert_key, messages, user_text
         )
-        session["messages"] = new_messages
+        session_store[expert_key]["messages"] = new_messages
         st.rerun()
 
-    # Save button (equivalent to :save)
-    if st.button("Save plan (equivalent to :save)"):
+    if st.button("Save plan (equivalent to :save)", key=button_key):
         new_messages, assistant_text, saved = run_expert_turn(
-            expert_key,
-            messages,
-            ":save",
+            expert_key, messages, ":save"
         )
-        session["messages"] = new_messages
+        session_store[expert_key]["messages"] = new_messages
         if saved:
             try:
                 with open(EXPERTS[expert_key]["file"], "r", encoding="utf-8") as f:
@@ -498,6 +468,31 @@ def render_expert_chat():
         else:
             st.error("Save failed or no changes to save.")
         st.rerun()
+
+
+def render_expert_chat():
+    st.sidebar.title("Experts")
+    expert_key = st.sidebar.selectbox(
+        "Choose expert",
+        options=[
+            "biometrics",
+            "workout",
+            "workout_planner",
+            "nutrition",
+            "meal_planner",
+            "supplements",
+            "recipes",
+            "pantry",
+            "planner",
+        ],
+        format_func=lambda x: x.capitalize(),
+    )
+    _render_expert_conversation_block(
+        expert_key,
+        f"{expert_key.replace('_', ' ').title()} Expert",
+        chat_key=f"chat_{expert_key}",
+        button_key=f"save_{expert_key}",
+    )
 
 
 def render_workout_log():
@@ -1165,6 +1160,13 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
                     st.write(f"- {name}: {focus}")
         else:
             st.info("No workout template saved yet. Visit the Workout expert in the hub to create one.")
+        st.markdown("---")
+        _render_expert_conversation_block(
+            "workout_planner",
+            "Chat with Workout Planner",
+            chat_key="chat_workout_planner_tab",
+            button_key="save_workout_planner_tab",
+        )
 
     with meal_tab:
         st.subheader("Meal Planner")
@@ -1220,6 +1222,13 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
                         st.success("Meal rotation saved via nutrition.json")
         else:
             st.info("No nutrition plan saved yet. Chat with the Nutrition expert to build one.")
+        st.markdown("---")
+        _render_expert_conversation_block(
+            "meal_planner",
+            "Chat with Meal Planner",
+            chat_key="chat_meal_planner_tab",
+            button_key="save_meal_planner_tab",
+        )
 
     with calendar_tab:
         st.subheader("Monthly / Combined Planner")
@@ -1232,6 +1241,13 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
             st.info(
                 "No calendar plan saved yet. Use the Planner expert to map workouts, meals, and supplements onto specific dates."
             )
+        st.markdown("---")
+        _render_expert_conversation_block(
+            "planner",
+            "Chat with Scheduler",
+            chat_key="chat_scheduler_tab",
+            button_key="save_scheduler_tab",
+        )
 
 
 def render_shopping_list_tools() -> None:
