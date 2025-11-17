@@ -1,7 +1,15 @@
-from expert_core import EXPERTS, start_expert_session, run_expert_turn
+import json
+
+from expert_core import (
+    EXPERTS,
+    start_expert_session,
+    run_expert_turn,
+    build_shared_state,
+    handle_preferences_from_expert_state,
+)
 
 
-def conversation_loop(expert_key: str):
+def conversation_loop(expert_key: str, shared_state):
     expert = EXPERTS[expert_key]
     print(f"\n=== Talking to {expert['description']} ===")
 
@@ -36,6 +44,24 @@ def conversation_loop(expert_key: str):
             break
 
         if command == ":save":
+            if saved:
+                try:
+                    with open(expert["file"], "r", encoding="utf-8") as f:
+                        expert_state = json.load(f)
+                except Exception:
+                    expert_state = None
+
+                if isinstance(expert_state, dict):
+                    prefs_changed = handle_preferences_from_expert_state(
+                        expert_state, shared_state
+                    )
+                    if prefs_changed:
+                        try:
+                            with open(expert["file"], "w", encoding="utf-8") as f:
+                                json.dump(expert_state, f, indent=2, ensure_ascii=False)
+                        except Exception:
+                            pass
+                    shared_state[expert_key] = expert_state
             print(f"\n{assistant_text}\n")
             continue
 
@@ -44,6 +70,7 @@ def conversation_loop(expert_key: str):
 
 
 def main():
+    shared_state = build_shared_state()
     while True:
         print("Choose expert:")
         for key in EXPERTS:
@@ -60,7 +87,7 @@ def main():
             print("Invalid choice, please try again.\n")
             continue
 
-        conversation_loop(choice)
+        conversation_loop(choice, shared_state)
 
 
 if __name__ == "__main__":

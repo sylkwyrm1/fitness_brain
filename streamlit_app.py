@@ -6,12 +6,25 @@ import time
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
+import pandas as pd
+from shopping_list import (
+    load_recipes,
+    generate_shopping_list_for_plan,
+    generate_shopping_list_from_nutrition,
+)
 import streamlit as st
 import streamlit.components.v1 as components
 
 from daily_planner import get_daily_plan
-from expert_core import EXPERTS, start_expert_session, run_expert_turn
+from expert_core import (
+    EXPERTS,
+    start_expert_session,
+    run_expert_turn,
+    build_shared_state,
+    handle_preferences_from_expert_state,
+)
 from workout_log import append_workout_log_row, load_workout_log
+from state_utils import load_workout_history
 
 
 def _planned_reps_to_int(val) -> int:
@@ -31,8 +44,21 @@ def _planned_reps_to_int(val) -> int:
     return 0
 
 
-def build_planned_sets_for_date(selected_date: date) -> List[Dict[str, Any]]:
+def _format_metric_value(val) -> str:
+    """Format numeric metric values, falling back to an em dash when missing."""
+    if val is None or val == "":
+        return "—"
+    try:
+        if isinstance(val, float):
+            return f"{val:.2f}".rstrip("0").rstrip(".") or "0"
+        return str(val)
+    except Exception:
+        return str(val)
+
+
+def build_planned_sets_for_date(selected_date: date) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Convert the saved workout plan for a date into per-set rows."""
+    plan: Dict[str, Any] = {}
     try:
         plan = get_daily_plan(selected_date)
         workout_info = plan.get("workout") or {}
@@ -73,7 +99,7 @@ def build_planned_sets_for_date(selected_date: date) -> List[Dict[str, Any]]:
                     "target_rpe": target_rpe_val,
                 }
             )
-    return planned_rows
+    return planned_rows, plan
 
 
 def _planned_signature(planned_rows: List[Dict[str, Any]]) -> List[Tuple[Any, ...]]:
@@ -152,13 +178,42 @@ def move_to_next_pending_set(state: Dict[str, Any], after_index: Optional[int] =
     state["current_index"] = pending[0]
 
 
+def ensure_workout_state_for_date(selected_date: date, planned_rows: List[Dict[str, Any]]) -> None:
+    """Ensure the workout session state exists for the selected date/plan."""
+    expected_signature = _planned_signature(planned_rows)
+    date_str = selected_date.isoformat()
+    state = st.session_state.get("workout_state")
+    if (
+        state is None
+        or state.get("date") != date_str
+        or state.get("plan_signature") != expected_signature
+    ):
+        initialise_workout_state(selected_date, planned_rows)
+    else:
+        state["plan_signature"] = expected_signature
+
+
+def update_current_index_after_completion(state: Dict[str, Any]) -> None:
+    """Move the pointer to the next pending set after completing one."""
+    move_to_next_pending_set(state, after_index=state.get("current_index"))
+
+
 st.set_page_config(page_title="Fitness Brain - Daily Planner", layout="wide")
 
 selected_date = date.today()
+shared_state = build_shared_state()
 with st.sidebar:
     st.title("Fitness Brain")
     mode = st.radio(
-        "Mode", options=["Daily Planner", "Experts", "Workout Log"], index=0
+        "Mode",
+        options=[
+            "Daily Planner",
+            "Experts",
+            "Workout Log",
+            "Workout History",
+            "Shopping List",
+        ],
+        index=0,
     )
     if mode == "Daily Planner":
         selected_date = st.date_input("Select date", value=date.today())
@@ -325,11 +380,20 @@ def render_daily_planner(selected_date: date):
 
 def render_expert_chat():
     st.sidebar.title("Experts")
+    global shared_state
 
     # Choose expert
     expert_key = st.sidebar.selectbox(
         "Choose expert",
-        options=["biometrics", "workout", "nutrition", "supplements", "planner"],
+        options=[
+            "biometrics",
+            "workout",
+            "nutrition",
+            "supplements",
+            "recipes",
+            "pantry",
+            "planner",
+        ],
         format_func=lambda x: x.capitalize(),
     )
 
@@ -380,6 +444,25 @@ def render_expert_chat():
         )
         session["messages"] = new_messages
         if saved:
+            try:
+                with open(EXPERTS[expert_key]["file"], "r", encoding="utf-8") as f:
+                    expert_state = json.load(f)
+            except Exception:
+                expert_state = None
+
+            if isinstance(expert_state, dict):
+                prefs_changed = handle_preferences_from_expert_state(
+                    expert_state, shared_state
+                )
+                if prefs_changed:
+                    try:
+                        with open(
+                            EXPERTS[expert_key]["file"], "w", encoding="utf-8"
+                        ) as f:
+                            json.dump(expert_state, f, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
+                shared_state[expert_key] = expert_state
             st.success("Plan saved for this expert.")
         else:
             st.error("Save failed or no changes to save.")
@@ -387,74 +470,44 @@ def render_expert_chat():
 
 
 def render_workout_log():
-    st.sidebar.title("Workout Log")
-    selected_date = st.sidebar.date_input("Date", value=date.today())
-    date_str = selected_date.isoformat()
+    st.header("Workout Log")
 
-    st.markdown(f"## Session for {date_str}")
+    selected_date: date = st.date_input(
+        "Select workout date",
+        value=st.session_state.get("workout_log_selected_date", date.today()),
+        key="workout_log_date_input",
+    )
+    st.session_state["workout_log_selected_date"] = selected_date
 
-    planned_rows = build_planned_sets_for_date(selected_date)
+    planned_sets, daily_plan = build_planned_sets_for_date(selected_date)
 
-    full_log_df = load_workout_log()
-
-    def render_logged_sets_table() -> None:
-        """Show the historical log table for the current date."""
-        if full_log_df.empty:
-            st.info("No logged sets yet for this date.")
-            return
-
-        date_df = full_log_df[full_log_df["date"] == date_str]
-        if date_df.empty:
-            st.info("No logged sets yet for this date.")
-            return
-
-        entries = date_df.to_dict("records")
-
-        def sort_key(entry: Dict[str, Any]) -> Tuple[str, float]:
-            set_val = entry.get("set_number", 0)
-            try:
-                set_num = float(set_val)
-            except (TypeError, ValueError):
-                set_num = 0.0
-            return (str(entry.get("exercise", "")), set_num)
-
-        entries = sorted(entries, key=sort_key)
-        display_rows = [
-            {
-                "Exercise": e.get("exercise", ""),
-                "Set #": e.get("set_number", ""),
-                "Planned reps": e.get("planned_reps", ""),
-                "Actual reps": e.get("actual_reps", ""),
-                "Weight (kg)": e.get("weight", ""),
-                "RPE": e.get("rpe", ""),
-                "Notes": e.get("notes", ""),
-            }
-            for e in entries
-        ]
-        st.table(display_rows)
-
-    if not planned_rows:
-        st.info("No planned workout found for this date.")
-        st.markdown("---")
-        st.subheader("Logged sets for this date")
-        render_logged_sets_table()
+    if not planned_sets:
+        st.info("No workout scheduled for this date.")
         return
 
-    state = st.session_state.get("workout_state")
-    plan_signature = _planned_signature(planned_rows)
-    if (
-        state is None
-        or state.get("date") != date_str
-        or state.get("plan_signature") != plan_signature
-    ):
-        initialise_workout_state(selected_date, planned_rows)
-        state = st.session_state["workout_state"]
+    ensure_workout_state_for_date(selected_date, planned_sets)
+    state = st.session_state["workout_state"]
 
-    # Rest timer (with live countdown)
+    sets = state["sets"]
+    total_sets = len(sets)
+    completed_sets_count = sum(1 for s in sets if s["status"] == "completed")
+
+    exercise_order: List[str] = []
+    for s in sets:
+        if s["exercise"] not in exercise_order:
+            exercise_order.append(s["exercise"])
+
+    first_exercise = exercise_order[0] if exercise_order else None
+
+    current_set = None
+    if state.get("current_index") is not None:
+        current_set = next(
+            (s for s in sets if s["index"] == state["current_index"]), None
+        )
+
     if state.get("rest_active") and state.get("rest_end_time"):
         remaining = int(round(state["rest_end_time"] - time.time()))
         if remaining <= 0:
-            st.success("Rest finished - next set is ready.")
             state["rest_active"] = False
             state["rest_end_time"] = None
             state["rest_exercise"] = None
@@ -562,121 +615,93 @@ def render_workout_log():
                 height=90,
             )
 
-    sets_state: List[Dict[str, Any]] = state.get("sets", [])
-    total_sets = len(sets_state)
-    completed_sets = sum(1 for s in sets_state if s["status"] == "completed")
-    st.write(f"Progress: {completed_sets} / {total_sets} sets completed")
+    st.subheader(f"Progress: {completed_sets_count} / {total_sets} sets completed")
 
-    current_index = state.get("current_index")
-    current_set = next(
-        (s for s in sets_state if s["index"] == current_index), None
-    )
-    if current_set:
-        target_text = (
-            f" @ RPE {current_set['target_rpe']}"
-            if current_set.get("target_rpe") is not None
-            else ""
-        )
+    if current_set is not None:
         st.write(
-            f"Current set: {current_set['exercise']} - Set {current_set['set_number']} "
-            f"(planned {current_set['planned_reps']} reps{target_text})"
+            f"Current set: **{current_set['exercise']} — Set {current_set['set_number']}** "
+            f"(planned {current_set['planned_reps']} reps @ RPE {current_set['target_rpe']})"
         )
     else:
         st.success("All sets completed for this date.")
 
-    # Build exercise grouping
-    exercise_order: List[str] = []
-    exercise_sets: Dict[str, List[Dict[str, Any]]] = {}
-    for set_state in sets_state:
-        exercise_name = set_state["exercise"]
-        exercise_sets.setdefault(exercise_name, []).append(set_state)
-        if exercise_name not in exercise_order:
-            exercise_order.append(exercise_name)
+    hide_completed = st.checkbox(
+        "Hide completed sets",
+        value=False,
+        key="hide_completed_sets",
+        help="When checked, completed sets are hidden from the list below.",
+    )
 
     st.markdown("---")
-    st.subheader("Session runner")
 
-    date_prefix = date_str.replace("-", "")
+    full_log_df = load_workout_log()
 
-    for idx, exercise_name in enumerate(exercise_order):
-        sets_for_exercise = exercise_sets.get(exercise_name, [])
-        total_for_ex = len(sets_for_exercise)
-        completed_for_ex = sum(1 for s in sets_for_exercise if s["status"] == "completed")
-        has_current = any(s["index"] == current_index for s in sets_for_exercise)
+    for exercise_name in exercise_order:
+        exercise_sets = [s for s in sets if s["exercise"] == exercise_name]
+        completed_for_ex = sum(1 for s in exercise_sets if s["status"] == "completed")
+        total_for_ex = len(exercise_sets)
+        is_current_exercise = any(
+            s["index"] == state.get("current_index") for s in exercise_sets
+        )
 
-        header = f"{exercise_name} ({completed_for_ex}/{total_for_ex} sets completed)"
-        if has_current:
-            header = f"▶ {header}"
+        header_label = f"{exercise_name} ({completed_for_ex}/{total_for_ex} sets completed)"
+        if is_current_exercise:
+            header_label = "▶ " + header_label
 
-        expanded_default = idx == 0 or has_current
-        with st.expander(header, expanded=expanded_default):
-            for set_state in sets_for_exercise:
-                set_number = set_state["set_number"]
-                planned_reps = set_state.get("planned_reps", "")
-                target_rpe = set_state.get("target_rpe")
-                rest_seconds = set_state.get("rest_seconds")
-                planned_label = (
-                    f"Set {set_number} - planned {planned_reps} reps"
-                    + (f" @ RPE {target_rpe}" if target_rpe is not None else "")
+        expanded_default = (exercise_name == first_exercise) or is_current_exercise
+
+        with st.expander(header_label, expanded=expanded_default):
+            for set_info in exercise_sets:
+                idx = set_info["index"]
+                is_current_row = state.get("current_index") == idx
+                base_label = (
+                    f"Set {set_info['set_number']} — "
+                    f"planned {set_info['planned_reps']} reps "
+                    f"@ RPE {set_info['target_rpe']}"
                 )
-                if rest_seconds:
-                    planned_label += f" | Rest {rest_seconds}s"
+                set_label = f"▶ {base_label}" if is_current_row else base_label
 
-                if set_state["status"] == "completed":
-                    log_entry = set_state.get("log") or {}
-                    actual_reps = log_entry.get("actual_reps", "")
-                    weight = log_entry.get("weight", "")
-                    actual_rpe = log_entry.get("rpe", "")
-                    notes = log_entry.get("notes", "")
-                    summary = (
-                        f"[done] {planned_label} - actual: {actual_reps} reps @ "
-                        f"{weight} kg, RPE {actual_rpe}"
+                if set_info["status"] == "completed":
+                    if hide_completed:
+                        continue
+
+                    log_row = set_info.get("log") or {}
+                    actual_reps = log_row.get("actual_reps", "")
+                    weight = log_row.get("weight", "")
+                    rpe = log_row.get("rpe", "")
+                    notes = log_row.get("notes", "")
+                    st.markdown(
+                        f"- ✅ **{set_label}** — actual: {actual_reps} reps @ {weight} kg, RPE {rpe}"
+                        + (f" — _{notes}_" if notes else "")
                     )
-                    if notes:
-                        summary += f" - notes: {notes}"
-                    st.markdown(summary)
                     continue
 
-                idx_current = set_state["index"]
-                suggested_weight: Optional[float] = None
-                suggested_reps: Optional[int] = None
-                suggested_rpe: Optional[float] = None
+                suggested_weight = None
+                suggested_reps = None
+                suggested_rpe = None
 
-                previous_session_sets = [
-                    s
-                    for s in sets_state
-                    if s["exercise"] == exercise_name
-                    and s["status"] == "completed"
-                    and s["index"] < idx_current
-                    and s.get("log")
-                ]
-                if previous_session_sets:
-                    previous_session_sets.sort(key=lambda s: s["index"])
-                    last_log = previous_session_sets[-1].get("log") or {}
-                    suggested_weight = last_log.get("weight")
-                    suggested_reps = last_log.get("actual_reps")
-                    suggested_rpe = last_log.get("rpe")
+                if full_log_df is not None and not full_log_df.empty:
+                    ex_df_all = full_log_df[full_log_df["exercise"] == exercise_name]
 
-                if (
-                    (suggested_weight is None or suggested_reps is None or suggested_rpe is None)
-                    and not full_log_df.empty
-                ):
-                    ex_df = full_log_df[full_log_df["exercise"] == exercise_name]
-                    if not ex_df.empty:
-                        last_row = ex_df.iloc[-1]
-                        if suggested_weight is None:
-                            suggested_weight = last_row.get("weight")
-                        if suggested_reps is None:
-                            suggested_reps = last_row.get("actual_reps")
-                        if suggested_rpe is None:
-                            suggested_rpe = last_row.get("rpe")
+                    if not ex_df_all.empty:
+                        day_str = selected_date.isoformat()
+                        day_df = ex_df_all[ex_df_all["date"] == day_str]
+
+                        if not day_df.empty:
+                            last_row = day_df.iloc[-1]
+                        else:
+                            last_row = ex_df_all.iloc[-1]
+
+                        suggested_weight = last_row.get("weight")
+                        suggested_reps = last_row.get("actual_reps")
+                        suggested_rpe = last_row.get("rpe")
 
                 if suggested_weight is None:
                     suggested_weight = 0.0
                 if suggested_reps is None:
-                    suggested_reps = _planned_reps_to_int(planned_reps)
+                    suggested_reps = _planned_reps_to_int(set_info["planned_reps"])
                 if suggested_rpe is None:
-                    trpe = set_state.get("target_rpe")
+                    trpe = set_info.get("target_rpe")
                     suggested_rpe = float(trpe) if trpe is not None else 7.0
 
                 try:
@@ -695,81 +720,235 @@ def render_workout_log():
                     suggested_rpe = float(suggested_rpe)
                 except (TypeError, ValueError):
                     suggested_rpe = 7.0
-                suggested_rpe = max(0.0, min(10.0, suggested_rpe))
+                if suggested_rpe < 0.0:
+                    suggested_rpe = 0.0
+                if suggested_rpe > 10.0:
+                    suggested_rpe = 10.0
 
-                st.markdown(planned_label)
-                input_cols = st.columns([1, 1, 1])
-                base_key = f"{date_prefix}_{exercise_name}_{set_number}"
-                weight_val = input_cols[0].number_input(
-                    "Weight (kg)",
-                    min_value=0.0,
-                    max_value=500.0,
-                    value=float(suggested_weight),
-                    step=0.5,
-                    key=f"weight_{base_key}",
-                )
-                actual_reps_val = input_cols[1].number_input(
-                    "Actual reps",
-                    min_value=0,
-                    max_value=100,
-                    value=int(suggested_reps),
-                    step=1,
-                    key=f"reps_{base_key}",
-                )
-                actual_rpe_val = input_cols[2].number_input(
-                    "Actual RPE",
-                    min_value=0.0,
-                    max_value=10.0,
-                    value=float(suggested_rpe),
-                    step=0.5,
-                    key=f"rpe_{base_key}",
-                )
-                notes_val = st.text_input(
-                    "Notes (optional)", value="", key=f"notes_{base_key}"
-                )
-                log_clicked = st.button(
-                    "✓ Log set",
-                    key=f"log_{base_key}",
-                )
+                cols = st.columns([3, 1, 1, 1, 1])
+                with cols[0]:
+                    st.write(set_label)
 
-                if log_clicked:
+                base_key = f"{selected_date.isoformat()}_{exercise_name}_set{set_info['set_number']}"
+                weight_key = base_key + "_weight"
+                reps_key = base_key + "_reps"
+                rpe_key = base_key + "_rpe"
+
+                if weight_key not in st.session_state:
+                    st.session_state[weight_key] = suggested_weight
+                if reps_key not in st.session_state:
+                    st.session_state[reps_key] = suggested_reps
+                if rpe_key not in st.session_state:
+                    st.session_state[rpe_key] = suggested_rpe
+
+                with cols[1]:
+                    weight_val = st.number_input(
+                        "Weight (kg)",
+                        min_value=0.0,
+                        step=0.5,
+                        key=weight_key,
+                    )
+
+                with cols[2]:
+                    actual_reps_val = st.number_input(
+                        "Reps",
+                        min_value=0,
+                        step=1,
+                        key=reps_key,
+                    )
+
+                with cols[3]:
+                    actual_rpe_val = st.number_input(
+                        "RPE",
+                        min_value=0.0,
+                        max_value=10.0,
+                        step=0.5,
+                        key=rpe_key,
+                    )
+
+                with cols[4]:
+                    log_button = st.button("✓", key=base_key + "_log", help="Log this set")
+
+                notes_key = base_key + "_notes"
+                notes_val = st.text_input("Notes (optional)", key=notes_key)
+
+                if log_button:
                     if weight_val <= 0 or actual_reps_val <= 0 or actual_rpe_val <= 0:
-                        st.warning("Please enter positive weight, reps, and RPE before logging.")
-                        continue
-
-                    row = {
-                        "date": date_str,
-                        "exercise": exercise_name,
-                        "set_number": set_number,
-                        "planned_reps": planned_reps,
-                        "actual_reps": int(actual_reps_val),
-                        "weight": float(weight_val),
-                        "rpe": float(actual_rpe_val),
-                        "notes": notes_val.strip(),
-                    }
-                    append_workout_log_row(row)
-
-                    set_state["status"] = "completed"
-                    set_state["log"] = row
-
-                    rest_seconds_val = rest_seconds or 0
-                    if rest_seconds_val > 0:
-                        state["rest_active"] = True
-                        state["rest_end_time"] = time.time() + rest_seconds_val
-                        state["rest_exercise"] = exercise_name
+                        st.warning("Please enter weight, reps, and RPE before logging this set.")
                     else:
-                        state["rest_active"] = False
-                        state["rest_end_time"] = None
-                        state["rest_exercise"] = None
+                        row = {
+                            "date": selected_date.isoformat(),
+                            "exercise": exercise_name,
+                            "set_number": set_info["set_number"],
+                            "planned_reps": set_info["planned_reps"],
+                            "actual_reps": int(actual_reps_val),
+                            "weight": float(weight_val),
+                            "rpe": float(actual_rpe_val),
+                            "notes": notes_val,
+                        }
+                        append_workout_log_row(row)
 
-                    state["current_index"] = set_state["index"]
-                    move_to_next_pending_set(state, after_index=set_state["index"])
-                    st.success(f"Logged {exercise_name} - Set {set_number}.")
-                    st.rerun()
+                        set_info["status"] = "completed"
+                        set_info["log"] = row
+
+                        rest_seconds = int(set_info.get("rest_seconds") or 0)
+                        if rest_seconds > 0:
+                            state["rest_active"] = True
+                            state["rest_end_time"] = time.time() + rest_seconds
+                            state["rest_exercise"] = exercise_name
+                        else:
+                            state["rest_active"] = False
+                            state["rest_end_time"] = None
+                            state["rest_exercise"] = None
+
+                        state["current_index"] = set_info["index"]
+                        update_current_index_after_completion(state)
+
+                        st.rerun()
 
     st.markdown("---")
     st.subheader("Logged sets for this date")
-    render_logged_sets_table()
+
+    if full_log_df is not None and not full_log_df.empty:
+        date_str = selected_date.isoformat()
+        df_for_date = full_log_df[full_log_df["date"] == date_str]
+        if df_for_date.empty:
+            st.write("No sets logged yet for this date.")
+        else:
+            st.dataframe(df_for_date, width="stretch")
+    else:
+        st.write("No workout log data yet.")
+
+
+def render_workout_history():
+    st.header("Workout History")
+
+    history = load_workout_history()
+
+    if not history or "exercises" not in history or not history["exercises"]:
+        st.info(
+            "No workout history available yet. Log some sets and run workout_history.py."
+        )
+        return
+
+    exercises_dict = history["exercises"]
+    exercise_names = sorted(exercises_dict.keys())
+
+    selected_exercise = st.selectbox("Select exercise", exercise_names)
+    ex = exercises_dict.get(selected_exercise, {}) or {}
+
+    st.subheader(f"Overview: {selected_exercise}")
+    overall = ex.get("overall", {}) or {}
+    total_sessions = ex.get("total_sessions", 0)
+    total_sets = ex.get("total_sets", 0)
+    last_session_date = ex.get("last_session_date")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total sessions", total_sessions)
+        st.metric("Total sets", total_sets)
+    with col2:
+        st.metric("Avg weight", _format_metric_value(overall.get("avg_weight")))
+        st.metric("Max weight", _format_metric_value(overall.get("max_weight")))
+    with col3:
+        st.metric("Avg reps", _format_metric_value(overall.get("avg_reps")))
+        st.metric("Max reps", _format_metric_value(overall.get("max_reps")))
+        st.metric("Avg RPE", _format_metric_value(overall.get("avg_rpe")))
+
+    if last_session_date:
+        st.caption(f"Last session: {last_session_date}")
+
+    st.markdown("---")
+    st.subheader("Recent sessions")
+
+    recent_sessions = ex.get("recent_sessions", []) or []
+
+    if not recent_sessions:
+        st.write("No recent sessions recorded for this exercise.")
+    else:
+        chart_rows: List[Dict[str, float]] = []
+        for sess in recent_sessions:
+            date_str = sess.get("date")
+            top = sess.get("top_set") or {}
+            weight = top.get("weight")
+            if weight is None:
+                weight = sess.get("max_weight")
+            if weight is None:
+                weight = sess.get("avg_weight")
+
+            if date_str is None or weight is None:
+                continue
+
+            try:
+                chart_rows.append({"date": date_str, "top_weight": float(weight)})
+            except (TypeError, ValueError):
+                continue
+
+        trend_text = "Trend: not enough data."
+        if chart_rows:
+            chart_rows_sorted = sorted(chart_rows, key=lambda r: r["date"])
+            if len(chart_rows_sorted) >= 2:
+                first = chart_rows_sorted[0]["top_weight"]
+                last = chart_rows_sorted[-1]["top_weight"]
+                delta = last - first
+                if delta > 2.5:
+                    trend_text = (
+                        f"Trend: ↑ increasing (approx. +{delta:.1f} kg vs earliest session)."
+                    )
+                elif delta < -2.5:
+                    trend_text = (
+                        f"Trend: ↓ decreasing (approx. {delta:.1f} kg vs earliest session)."
+                    )
+                else:
+                    trend_text = "Trend: → relatively stable across recent sessions."
+
+            chart_df = pd.DataFrame(chart_rows_sorted)
+            chart_df["date"] = pd.to_datetime(chart_df["date"], errors="coerce")
+            chart_df = chart_df.dropna(subset=["date"])
+            if not chart_df.empty:
+                chart_df = chart_df.set_index("date")
+                st.markdown("**Top-set weight over recent sessions**")
+                st.line_chart(chart_df["top_weight"])
+
+        st.caption(trend_text)
+
+        df_sessions = pd.DataFrame(recent_sessions)
+        for col in list(df_sessions.columns):
+            if col.startswith("_"):
+                df_sessions = df_sessions.drop(columns=[col])
+
+        preferred_order = [
+            "date",
+            "sets",
+            "avg_weight",
+            "min_weight",
+            "max_weight",
+            "avg_reps",
+            "min_reps",
+            "max_reps",
+            "avg_rpe",
+            "min_rpe",
+            "max_rpe",
+        ]
+        cols_in_order = [c for c in preferred_order if c in df_sessions.columns]
+        remaining = [
+            c for c in df_sessions.columns if c not in cols_in_order and c != "top_set"
+        ]
+        display_cols = cols_in_order + remaining
+        df_sessions = df_sessions[display_cols]
+
+        st.dataframe(df_sessions, width="stretch")
+
+        most_recent = recent_sessions[0]
+        top = most_recent.get("top_set") or {}
+        if isinstance(top, dict) and any(value is not None for value in top.values()):
+            st.markdown("**Most recent top set:**")
+            st.write(
+                f"- Date: {most_recent.get('date', '—')}\n"
+                f"- Weight: {_format_metric_value(top.get('weight'))} kg\n"
+                f"- Reps: {_format_metric_value(top.get('reps'))}\n"
+                f"- RPE: {_format_metric_value(top.get('rpe'))}"
+            )
 
 if mode == "Daily Planner":
     render_daily_planner(selected_date)
@@ -777,3 +956,73 @@ elif mode == "Experts":
     render_expert_chat()
 elif mode == "Workout Log":
     render_workout_log()
+elif mode == "Workout History":
+    render_workout_history()
+elif mode == "Shopping List":
+    st.header("Shopping List (v0)")
+
+    recipes = load_recipes()
+
+    if not recipes:
+        st.info(
+            "No recipes found in recipes.json.\n\n"
+            "Use the Recipes expert to create and save some recipes first."
+        )
+    else:
+        label_to_id: Dict[str, str] = {}
+        labels: List[str] = []
+        for rid, recipe in recipes.items():
+            name = recipe.get("name") or rid
+            label = f"{name} ({rid})" if name != rid else name
+            label_to_id[label] = rid
+            labels.append(label)
+
+        labels.sort()
+
+        st.subheader("Select recipes and servings")
+
+        selected_labels = st.multiselect("Recipes to include", options=labels)
+
+        recipe_servings: Dict[str, int] = {}
+        if selected_labels:
+            st.write("Set the number of servings for each selected recipe:")
+            for label in selected_labels:
+                rid = label_to_id[label]
+                key = f"shopping_servings_{rid}"
+                servings = st.number_input(
+                    f"Servings for {label}",
+                    min_value=0,
+                    step=1,
+                    value=1,
+                    key=key,
+                )
+                recipe_servings[rid] = int(servings)
+
+        generate = st.button("Generate shopping list")
+
+        if generate:
+            recipe_servings_clean = {
+                rid: n for rid, n in recipe_servings.items() if n > 0
+            }
+
+            if not recipe_servings_clean:
+                st.warning(
+                    "Please select at least one recipe and set servings above zero."
+                )
+            else:
+                text_list = generate_shopping_list_for_plan(recipe_servings_clean)
+                st.subheader("Shopping list")
+                st.code(text_list, language="text")
+
+        st.markdown("---")
+        st.subheader("Generate from current nutrition plan")
+        st.caption(
+            "This uses nutrition.json and its 'recipe_links' mapping to figure out which "
+            "recipes and servings are planned across your days, then builds a shopping "
+            "list automatically."
+        )
+        generate_from_plan = st.button("Generate from nutrition plan")
+        if generate_from_plan:
+            text_list_plan = generate_shopping_list_from_nutrition()
+            st.subheader("Shopping list from nutrition plan")
+            st.code(text_list_plan, language="text")

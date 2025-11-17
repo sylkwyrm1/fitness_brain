@@ -4,6 +4,8 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 from typing import Any, Dict, Optional
 
+from preferences_manager import load_preferences
+
 # Determine the folder this script lives in
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -306,6 +308,8 @@ def print_daily_plan(plan: Dict[str, Any]) -> None:
     print(f" DAILY PLAN DEBUG VIEW FOR {weekday_display}")
     print("=" * 50)
 
+    prefs = load_preferences()
+
     planner_info = plan.get("planner")
     if planner_info:
         print("\n[Planner]")
@@ -437,6 +441,24 @@ def print_daily_plan(plan: Dict[str, Any]) -> None:
     else:
         message = plan["messages"].get("supplements") or "No supplements.json found or it's empty."
         print(f"  {message}")
+
+    print("\n[Preferences]")
+    fasting_protocol = (prefs.get("global") or {}).get("fasting_protocol")
+    respect_fasting = (
+        (prefs.get("daily_planner") or {}).get("respect_fasting_windows")
+    )
+
+    if fasting_protocol:
+        print(f"  Fasting protocol: {fasting_protocol}")
+    else:
+        print("  Fasting protocol: (none set)")
+
+    if respect_fasting is True:
+        print("  Daily Planner will respect fasting windows.")
+    elif respect_fasting is False:
+        print("  Daily Planner is not currently respecting fasting windows.")
+    else:
+        print("  Respect fasting windows: (unset)")
 
     print("\nDone.\n")
 
