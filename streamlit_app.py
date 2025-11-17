@@ -417,7 +417,9 @@ def render_expert_chat():
         options=[
             "biometrics",
             "workout",
+            "workout_planner",
             "nutrition",
+            "meal_planner",
             "supplements",
             "recipes",
             "pantry",
@@ -1041,6 +1043,11 @@ def _summarise_domain(shared_state: Dict[str, Any], key: str) -> str:
         return f"{len(items)} pantry items tracked"
     if key == "planner":
         return f"Month: {data.get('month', 'n/a')} · {len((data.get('days') or {}))} days planned"
+    if key == "workout_planner":
+        return "Schedules workout sessions across the calendar"
+    if key == "meal_planner":
+        links = data.get("recipe_links") or {}
+        return f"{len(links)} day-type meal rotations configured"
     return "Ready when you are."
 
 
@@ -1050,11 +1057,13 @@ def render_expert_hub(shared_state: Dict[str, Any]) -> None:
 
     expert_groups = [
         ("workout", "Workout"),
+        ("workout_planner", "Workout Planner"),
         ("nutrition", "Nutrition"),
+        ("meal_planner", "Meal Planner"),
         ("supplements", "Supplements"),
         ("recipes", "Recipes"),
         ("pantry", "Pantry"),
-        ("planner", "Planner"),
+        ("planner", "Scheduler"),
     ]
 
     cols = st.columns(3)
