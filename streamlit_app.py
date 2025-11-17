@@ -216,23 +216,29 @@ def update_current_index_after_completion(state: Dict[str, Any]) -> None:
 
 st.set_page_config(page_title="Fitness Brain - Daily Planner", layout="wide")
 
-selected_date = date.today()
 shared_state = build_shared_state()
+selected_schedule_date = st.session_state.get("scheduler_selected_date", date.today())
 with st.sidebar:
     st.title("Fitness Brain")
     mode = st.radio(
-        "Mode",
+        "Workspace",
         options=[
-            "Daily Planner",
-            "Experts",
-            "Workout Log",
-            "Workout History",
-            "Shopping List",
+            "Concierge",
+            "Expert Hub",
+            "Planners",
+            "Trackers",
+            "Kitchen",
+            "Scheduler",
         ],
         index=0,
     )
-    if mode == "Daily Planner":
-        selected_date = st.date_input("Select date", value=date.today())
+    if mode == "Scheduler":
+        selected_schedule_date = st.date_input(
+            "Select schedule date",
+            value=selected_schedule_date,
+            key="scheduler_date_input",
+        )
+        st.session_state["scheduler_selected_date"] = selected_schedule_date
 
 
 def render_daily_planner(selected_date: date):
@@ -966,16 +972,146 @@ def render_workout_history():
                 f"- RPE: {_format_metric_value(top.get('rpe'))}"
             )
 
-if mode == "Daily Planner":
-    render_daily_planner(selected_date)
-elif mode == "Experts":
+
+def render_concierge(shared_state: Dict[str, Any]) -> None:
+    st.header("Concierge")
+    st.caption("Start by confirming your baseline stats and global preferences.")
+
+    biometrics = shared_state.get("biometrics") or {}
+    preferences = shared_state.get("preferences") or {}
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Current Profile")
+        if biometrics:
+            st.metric("Goal", biometrics.get("goal", "-"))
+            st.metric("Current weight (kg)", biometrics.get("current_weight_kg", "-"))
+            activity = biometrics.get("activity_pattern", {}) or {}
+            st.metric("Training days/week", activity.get("training_days_per_week", "-"))
+            st.write("**Notes:**", biometrics.get("notes", "—"))
+        else:
+            st.info("No biometrics saved yet. Talk to the Biometrics expert or use the CLI to create one.")
+
+    with col2:
+        st.subheader("Key Preferences")
+        global_prefs = preferences.get("global") or {}
+        schedule = preferences.get("schedule") or {}
+        planner_prefs = preferences.get("daily_planner") or {}
+        st.write(f"- Diet style: {global_prefs.get('diet_style') or 'not set'}")
+        st.write(f"- Fasting protocol: {global_prefs.get('fasting_protocol') or 'not set'}")
+        st.write(f"- Typical wake time: {schedule.get('typical_wake_time') or 'not set'}")
+        st.write(
+            f"- Respect fasting windows: {'Yes' if planner_prefs.get('respect_fasting_windows') else 'No'}"
+        )
+        notes = global_prefs.get("notes")
+        if notes:
+            st.info(notes)
+
+    st.markdown("---")
+    st.write(
+        "Need to change anything? Jump into the **Expert Hub** or update your shared preferences. "
+        "These values act as the briefing for every other part of the system."
+    )
+
+
+def _summarise_domain(shared_state: Dict[str, Any], key: str) -> str:
+    data = shared_state.get(key) or {}
+    if not data:
+        return "No plan saved yet."
+    if key == "workout":
+        name = data.get("template_name") or "Unnamed template"
+        days = data.get("days_per_week")
+        return f"{name} · {days or '?'} days/week"
+    if key == "nutrition":
+        return f"{data.get('profile_name', 'Weekly plan')} · {len(data.get('day_types', {}))} day types"
+    if key == "supplements":
+        return data.get("template_name", "Weekly stack not saved")
+    if key == "recipes":
+        recipes = data.get("recipes", [])
+        return f"{len(recipes)} recipes saved"
+    if key == "pantry":
+        items = data.get("items", [])
+        return f"{len(items)} pantry items tracked"
+    if key == "planner":
+        return f"Month: {data.get('month', 'n/a')} · {len((data.get('days') or {}))} days planned"
+    return "Ready when you are."
+
+
+def render_expert_hub(shared_state: Dict[str, Any]) -> None:
+    st.header("Expert Hub")
+    st.caption("Review each domain at a glance, then dive into a conversation when you need deeper guidance.")
+
+    expert_groups = [
+        ("workout", "Workout"),
+        ("nutrition", "Nutrition"),
+        ("supplements", "Supplements"),
+        ("recipes", "Recipes"),
+        ("pantry", "Pantry"),
+        ("planner", "Planner"),
+    ]
+
+    cols = st.columns(3)
+    for idx, (key, label) in enumerate(expert_groups):
+        col = cols[idx % len(cols)]
+        with col:
+            st.write(f"**{label}**")
+            st.caption(_summarise_domain(shared_state, key))
+
+    st.divider()
+    st.subheader("Talk to an expert")
     render_expert_chat()
-elif mode == "Workout Log":
-    render_workout_log()
-elif mode == "Workout History":
-    render_workout_history()
-elif mode == "Shopping List":
-    st.header("Shopping List (v0)")
+
+
+def render_planners(shared_state: Dict[str, Any]) -> None:
+    st.header("Planners")
+    st.caption("Shape the reusable building blocks for your program.")
+
+    workout_tab, meal_tab, calendar_tab = st.tabs(
+        ["Workout Planner", "Meal Planner", "Monthly Planner"]
+    )
+
+    with workout_tab:
+        st.subheader("Workout Planner")
+        workout_plan = shared_state.get("workout") or {}
+        if workout_plan:
+            st.write(f"**Template:** {workout_plan.get('template_name', 'Untitled')}")
+            st.write(f"**Days per week:** {workout_plan.get('days_per_week', '-')}")
+            if workout_plan.get("days"):
+                st.write("**Saved days:**")
+                for name, info in workout_plan["days"].items():
+                    focus = info.get("focus", "n/a")
+                    st.write(f"- {name}: {focus}")
+        else:
+            st.info("No workout template saved yet. Visit the Workout expert in the hub to create one.")
+
+    with meal_tab:
+        st.subheader("Meal Planner")
+        nutrition_plan = shared_state.get("nutrition") or {}
+        if nutrition_plan:
+            st.write(f"**Profile:** {nutrition_plan.get('profile_name', 'Weekly plan')}")
+            st.write(f"**Day types:** {len(nutrition_plan.get('day_types', {}))}")
+            st.write(f"**Weekly plans:** {len(nutrition_plan.get('weekly_plans', {}))}")
+            active = nutrition_plan.get("active_weekly_plan")
+            if active:
+                st.write(f"**Active weekly rotation:** {active}")
+        else:
+            st.info("No nutrition plan saved yet. Chat with the Nutrition expert to build one.")
+
+    with calendar_tab:
+        st.subheader("Monthly / Combined Planner")
+        planner_state = shared_state.get("planner") or {}
+        if planner_state:
+            st.write(f"**Month:** {planner_state.get('month', 'n/a')}")
+            st.write(f"**Label:** {planner_state.get('label', 'n/a')}")
+            st.write(f"**Days configured:** {len(planner_state.get('days', {}))}")
+        else:
+            st.info(
+                "No calendar plan saved yet. Use the Planner expert to map workouts, meals, and supplements onto specific dates."
+            )
+
+
+def render_shopping_list_tools() -> None:
+    st.subheader("Shopping List")
 
     recipes = load_recipes()
 
@@ -984,61 +1120,147 @@ elif mode == "Shopping List":
             "No recipes found in recipes.json.\n\n"
             "Use the Recipes expert to create and save some recipes first."
         )
-    else:
-        label_to_id: Dict[str, str] = {}
-        labels: List[str] = []
-        for rid, recipe in recipes.items():
-            name = recipe.get("name") or rid
-            label = f"{name} ({rid})" if name != rid else name
-            label_to_id[label] = rid
-            labels.append(label)
+        return
 
-        labels.sort()
+    label_to_id: Dict[str, str] = {}
+    labels: List[str] = []
+    for rid, recipe in recipes.items():
+        name = recipe.get("name") or rid
+        label = f"{name} ({rid})" if name != rid else name
+        label_to_id[label] = rid
+        labels.append(label)
 
-        st.subheader("Select recipes and servings")
+    labels.sort()
 
-        selected_labels = st.multiselect("Recipes to include", options=labels)
+    st.write("Select recipes and servings to build a shopping list.")
+    selected_labels = st.multiselect("Recipes to include", options=labels)
 
-        recipe_servings: Dict[str, int] = {}
-        if selected_labels:
-            st.write("Set the number of servings for each selected recipe:")
-            for label in selected_labels:
-                rid = label_to_id[label]
-                key = f"shopping_servings_{rid}"
-                servings = st.number_input(
-                    f"Servings for {label}",
-                    min_value=0,
-                    step=1,
-                    value=1,
-                    key=key,
-                )
-                recipe_servings[rid] = int(servings)
+    recipe_servings: Dict[str, int] = {}
+    if selected_labels:
+        st.write("Set the number of servings for each selected recipe:")
+        for label in selected_labels:
+            rid = label_to_id[label]
+            key = f"shopping_servings_{rid}"
+            servings = st.number_input(
+                f"Servings for {label}",
+                min_value=0,
+                step=1,
+                value=1,
+                key=key,
+            )
+            recipe_servings[rid] = int(servings)
 
-        generate = st.button("Generate shopping list")
+    generate = st.button("Generate shopping list")
 
-        if generate:
-            recipe_servings_clean = {
-                rid: n for rid, n in recipe_servings.items() if n > 0
-            }
+    if generate:
+        recipe_servings_clean = {rid: n for rid, n in recipe_servings.items() if n > 0}
 
-            if not recipe_servings_clean:
-                st.warning(
-                    "Please select at least one recipe and set servings above zero."
-                )
-            else:
-                text_list = generate_shopping_list_for_plan(recipe_servings_clean)
-                st.subheader("Shopping list")
-                st.code(text_list, language="text")
+        if not recipe_servings_clean:
+            st.warning("Please select at least one recipe and set servings above zero.")
+        else:
+            text_list = generate_shopping_list_for_plan(recipe_servings_clean)
+            st.subheader("Shopping list")
+            st.code(text_list, language="text")
 
-        st.markdown("---")
-        st.subheader("Generate from current nutrition plan")
-        st.caption(
-            "This uses nutrition.json and its 'recipe_links' mapping to figure out which "
-            "recipes and servings are planned across your days, then builds a shopping "
-            "list automatically."
+    st.markdown("---")
+    st.subheader("Generate from current nutrition plan")
+    st.caption(
+        "This uses nutrition.json and its 'recipe_links' mapping to figure out which "
+        "recipes and servings are planned across your days, then builds a shopping "
+        "list automatically."
+    )
+    generate_from_plan = st.button("Generate from nutrition plan")
+    if generate_from_plan:
+        text_list_plan = generate_shopping_list_from_nutrition()
+        st.subheader("Shopping list from nutrition plan")
+        st.code(text_list_plan, language="text")
+
+
+def render_kitchen(shared_state: Dict[str, Any]) -> None:
+    st.header("Kitchen")
+    st.caption("Browse recipes, manage pantry staples, and prep your shopping list.")
+
+    recipes_tab, pantry_tab, shopping_tab = st.tabs(
+        ["Recipes", "Pantry", "Shopping List"]
+    )
+
+    with recipes_tab:
+        recipes_state = shared_state.get("recipes") or {}
+        recipes = recipes_state.get("recipes", [])
+        st.subheader("Recipe Library")
+        if recipes:
+            st.write(f"{len(recipes)} recipes saved.")
+            names = [r.get("name") or r.get("id") for r in recipes][:10]
+            if names:
+                st.write(", ".join(names) + ("..." if len(recipes) > 10 else ""))
+        else:
+            st.info("No recipes saved yet.")
+        st.caption("Use the Recipes expert in the hub to add or edit entries.")
+
+    with pantry_tab:
+        pantry_state = shared_state.get("pantry") or {}
+        items = pantry_state.get("items", [])
+        st.subheader("Pantry")
+        if items:
+            st.write(f"{len(items)} items tracked.")
+            low = [item.get("name") for item in items if item.get("status") == "low"]
+            if low:
+                st.warning(f"Low stock: {', '.join(low)}")
+        else:
+            st.info("No pantry items tracked yet.")
+        st.caption("Talk to the Pantry expert to capture staples and their status.")
+
+    with shopping_tab:
+        render_shopping_list_tools()
+
+
+def render_trackers(shared_state: Dict[str, Any]) -> None:
+    st.header("Trackers")
+    st.caption("Log what happened and monitor progress.")
+
+    workout_tab, history_tab, biometrics_tab, food_tab = st.tabs(
+        ["Workout Tracker", "Workout History", "Biometrics", "Food Logger (beta)"]
+    )
+
+    with workout_tab:
+        render_workout_log()
+
+    with history_tab:
+        render_workout_history()
+
+    with biometrics_tab:
+        st.subheader("Biometrics Tracker")
+        biometrics = shared_state.get("biometrics") or {}
+        if biometrics:
+            st.metric("Current weight (kg)", biometrics.get("current_weight_kg", "-"))
+            st.metric("Goal", biometrics.get("goal", "-"))
+            st.write("**Notes:**", biometrics.get("notes", "—"))
+        else:
+            st.info("No biometrics on file yet.")
+        st.caption("Future versions will allow logging weight/body comp directly.")
+
+    with food_tab:
+        st.subheader("Food Logger")
+        st.info(
+            "Coming soon: tick off meals from today's plan, note substitutions, and sync with your pantry."
         )
-        generate_from_plan = st.button("Generate from nutrition plan")
-        if generate_from_plan:
-            text_list_plan = generate_shopping_list_from_nutrition()
-            st.subheader("Shopping list from nutrition plan")
-            st.code(text_list_plan, language="text")
+
+
+def render_scheduler(selected_date: date) -> None:
+    st.header("Scheduler")
+    st.caption("See the combined plan for a specific day, including workouts, meals, and supplements.")
+    render_daily_planner(selected_date)
+
+
+if mode == "Concierge":
+    render_concierge(shared_state)
+elif mode == "Expert Hub":
+    render_expert_hub(shared_state)
+elif mode == "Planners":
+    render_planners(shared_state)
+elif mode == "Trackers":
+    render_trackers(shared_state)
+elif mode == "Kitchen":
+    render_kitchen(shared_state)
+elif mode == "Scheduler":
+    render_scheduler(selected_schedule_date)
