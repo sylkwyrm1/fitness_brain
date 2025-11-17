@@ -16,13 +16,29 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from daily_planner import get_daily_plan
-from expert_core import (
-    EXPERTS,
-    start_expert_session,
-    run_expert_turn,
-    build_shared_state,
-    handle_preferences_from_expert_state,
-)
+from expert_core import EXPERTS, start_expert_session, run_expert_turn
+
+try:
+    from expert_core import build_shared_state
+except ImportError:
+    from expert_core import load_shared_state as _legacy_load_shared_state
+
+    def build_shared_state():
+        return _legacy_load_shared_state()
+
+try:
+    from expert_core import handle_preferences_from_expert_state
+except ImportError:
+    from expert_core import (
+        handle_workout_preferences_from_expert_state as _legacy_handle_preferences_from_expert_state,
+    )
+
+    def handle_preferences_from_expert_state(
+        expert_state, shared_state
+    ):  # pragma: no cover - legacy fallback for hosted deployments
+        return _legacy_handle_preferences_from_expert_state(
+            expert_state, shared_state
+        )
 from workout_log import append_workout_log_row, load_workout_log
 from state_utils import load_workout_history
 
