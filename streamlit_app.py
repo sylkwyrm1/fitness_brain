@@ -477,9 +477,7 @@ def render_expert_chat():
         options=[
             "biometrics",
             "workout",
-            "workout_planner",
             "nutrition",
-            "meal_planner",
             "supplements",
             "recipes",
             "pantry",
@@ -979,7 +977,9 @@ def render_workout_history():
 
 def render_concierge(shared_state: Dict[str, Any]) -> None:
     st.header("Concierge")
-    st.caption("Start by confirming your baseline stats and global preferences.")
+    st.caption(
+        "This is your starting point: confirm biometrics, share goals, and capture global preferences."
+    )
 
     biometrics = shared_state.get("biometrics") or {}
     preferences = shared_state.get("preferences") or {}
@@ -994,7 +994,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
             st.metric("Training days/week", activity.get("training_days_per_week", "-"))
             st.write("**Notes:**", biometrics.get("notes", "—"))
         else:
-            st.info("No biometrics saved yet. Talk to the Biometrics expert or use the CLI to create one.")
+            st.info("No biometrics saved yet. Talk to the Biometrics expert below to create one.")
 
     with col2:
         st.subheader("Key Preferences")
@@ -1012,9 +1012,16 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
             st.info(notes)
 
     st.markdown("---")
-    st.write(
-        "Need to change anything? Jump into the **Expert Hub** or update your shared preferences. "
-        "These values act as the briefing for every other part of the system."
+    st.subheader("Talk to the Biometrics & Goals Expert")
+    st.caption(
+        "Use this space to record initial stats, weekly updates, and overall goals. "
+        "Remember to revisit and refresh these numbers regularly."
+    )
+    _render_expert_conversation_block(
+        "biometrics",
+        "Biometrics & Goals",
+        chat_key="chat_biometrics_concierge",
+        button_key="save_biometrics_concierge",
     )
 
 
@@ -1052,9 +1059,7 @@ def render_expert_hub(shared_state: Dict[str, Any]) -> None:
 
     expert_groups = [
         ("workout", "Workout"),
-        ("workout_planner", "Workout Planner"),
         ("nutrition", "Nutrition"),
-        ("meal_planner", "Meal Planner"),
         ("supplements", "Supplements"),
         ("recipes", "Recipes"),
         ("pantry", "Pantry"),
