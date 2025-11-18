@@ -4,7 +4,7 @@
 
 import time
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -250,13 +250,94 @@ with st.sidebar:
         st.session_state["scheduler_selected_date"] = selected_schedule_date
 
 
+def _parse_time_to_minutes(time_str: str | None) -> int:
+    if not isinstance(time_str, str):
+        return 24 * 60
+    time_str = time_str.strip()
+    if not time_str:
+        return 24 * 60
+    for fmt in ("%H:%M", "%I:%M %p"):
+        try:
+            parsed = datetime.strptime(time_str, fmt)
+            return parsed.hour * 60 + parsed.minute
+        except ValueError:
+            continue
+    return 24 * 60
+
+
+def _build_day_timeline(plan: Dict[str, Any], shared_state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+    if not isinstance(plan, dict):
+        return events
+
+    preferences = shared_state.get("preferences") or {}
+    schedule_prefs = preferences.get("schedule") or {}
+    workout_prefs = preferences.get("workout") or {}
+
+    wake_time = schedule_prefs.get("typical_wake_time")
+    if wake_time:
+        events.append({"time": wake_time, "label": "Wake up", "detail": ""})
+
+    fasted_notes = plan.get("messages", {}).get("workout") or ""
+    workout_block = plan.get("workout", {})
+    if workout_block.get("planned"):
+        time_str = workout_prefs.get("preferred_training_time") or "15:00"
+        focus = workout_block.get("focus") or "Workout session"
+        label = f"{focus}"
+        if fasted_notes:
+            label = f"{label} ({fasted_notes})"
+        events.append({"time": time_str, "label": label, "detail": "Training"})
+
+    nutrition = plan.get("nutrition") or {}
+    meals = nutrition.get("meals") if isinstance(nutrition.get("meals"), list) else []
+    for meal in meals:
+        time_str = meal.get("time") or ""
+        name = meal.get("name") or "Meal"
+        events.append(
+            {
+                "time": time_str or "12:00",
+                "label": f"{name}",
+                "detail": "Nutrition",
+            }
+        )
+
+    supplements_block = plan.get("supplements") or {}
+    protocol = supplements_block.get("protocol") or []
+    for block in protocol:
+        time_str = block.get("time") or ""
+        items = block.get("items") or []
+        if not items:
+            continue
+        item_names = ", ".join(item.get("name", "Supplement") for item in items)
+        events.append(
+            {
+                "time": time_str or "00:00",
+                "label": f"{item_names}",
+                "detail": "Supplements",
+            }
+        )
+
+    events = sorted(
+        events,
+        key=lambda e: _parse_time_to_minutes(e.get("time")),
+    )
+    return events
+
+
 def render_daily_planner(selected_date: date):
     plan = get_daily_plan(selected_date)
+    timeline = _build_day_timeline(plan, shared_state)
+    timeline = _build_day_timeline(plan, shared_state)
     display_date = plan.get("date", selected_date.isoformat())
     weekday = plan.get("weekday", selected_date.strftime("%A").lower())
     messages = plan.get("messages", {})
 
     st.markdown(f"## Daily Plan for **{display_date}** ({weekday.title()})")
+    if timeline:
+        st.markdown("**Timeline**")
+        for event in timeline:
+            detail = f" ({event['detail']})" if event.get("detail") else ""
+            st.write(f"- {event['time']} — {event['label']}{detail}")
 
     planner_info = plan.get("planner")
     if planner_info:
