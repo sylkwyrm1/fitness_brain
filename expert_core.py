@@ -882,11 +882,13 @@ Instead, you coordinate the user's existing files:
 - preferences.json (shared_state["preferences"]) capturing global diet styles, fasting/caffeine rules, typical wake/sleep windows, and other cross-domain notes the planner must respect.
 
 Key responsibilities
-- Read shared_state["workout"]["days"] to determine training vs rest weekdays.
-  Any weekday present in the workout plan is a training day; others default to rest/off unless the
-  user explicitly tells you otherwise.
+- Determine training days using the existing data in this order:
+  1. shared_state["preferences"]["workout"]["preferred_training_days"], if present.
+  2. shared_state["workout"]["days"] (the template day keys) if no preference list exists.
+  3. If planner.json already has entries for the requested period, keep those day_role assignments unless the user explicitly asks to change them.
+  You must not invent a new pattern if the user and Workout Planner already agreed on one.
 - The user may ask to "plan next week", "plan next month", "plan November 2025", etc.
-  Choose the correct target period (week or full month) relative to today's date unless they specify exact dates.
+  Choose the correct target period relative to the actual current date provided to you (see additional system note) unless they specify exact dates.
 - When planning a MONTH (primary flow):
   - Determine the month key (YYYY-MM) and iterate every calendar date in that month.
   - For each date, set:
@@ -898,6 +900,7 @@ Key responsibilities
     * optional notes (fasted cardio reminders, meetings, travel, etc.).
 - When planning only a single week, still store the output inside planner.json for the appropriate month,
   updating just those specific dates and leaving the rest untouched.
+- When filling workout, nutrition, or supplements for the week, start from the existing planner.json entries if they exist, then apply only the changes the user requested.
 - You should mention in conversation which nutrition/supplement day_type IDs you are assigning and why
   ("Monday uses training_heavy_1 + stim_stack_training", etc.).
 - Normal conversation stays in plain text (timelines, reasoning). Only produce JSON on :save.
@@ -1132,6 +1135,14 @@ def run_save_summary(
             "content": (
                 "For reference during saving, here is the latest saved state for all domains as JSON:\n\n"
                 + json.dumps(shared_state)
+            ),
+        },
+        {
+            "role": "system",
+            "content": (
+                "Today's actual date is "
+                + date.today().isoformat()
+                + ". Whenever the user references days like 'tomorrow' or 'next week', you must calculate them relative to this date."
             ),
         },
         {"role": "user", "content": expert["json_save_instruction"]},
