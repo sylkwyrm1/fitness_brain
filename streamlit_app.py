@@ -265,6 +265,54 @@ def _parse_time_to_minutes(time_str: str | None) -> int:
     return 24 * 60
 
 
+def _minutes_to_time_str(minutes: int) -> str:
+    minutes = minutes % (24 * 60)
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _shift_time(base_time: str | None, offset_minutes: int, default: str) -> str:
+    base_minutes = _parse_time_to_minutes(base_time)
+    if base_minutes >= 24 * 60:
+        base_minutes = _parse_time_to_minutes(default)
+    if base_minutes >= 24 * 60:
+        base_minutes = 6 * 60  # 06:00 fallback
+    return _minutes_to_time_str(base_minutes + offset_minutes)
+
+
+def _resolve_named_time(
+    label: str,
+    wake_time: str | None,
+    training_time: str | None,
+    default: str,
+) -> str:
+    lower = label.strip().lower()
+    if not lower:
+        return default
+
+    mapping = {
+        "wake": wake_time,
+        "on waking": wake_time,
+        "upon waking": wake_time,
+        "morning": wake_time,
+        "breakfast": _shift_time(wake_time, 60, default),
+        "pre-workout": _shift_time(training_time, -60, default),
+        "pre workout": _shift_time(training_time, -60, default),
+        "post-workout": _shift_time(training_time, 30, default),
+        "post workout": _shift_time(training_time, 30, default),
+        "lunch": "12:30",
+        "dinner": "18:30",
+        "snacks": "16:00",
+        "with first meal": _shift_time(wake_time, 90, default),
+        "with lunch": "13:00",
+        "with dinner": "19:30",
+        "before bed": "21:30",
+    }
+    result = mapping.get(lower)
+    if result:
+        return result
+    return default
+
+
 def _build_day_timeline(plan: Dict[str, Any], shared_state: Dict[str, Any]) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     if not isinstance(plan, dict):
@@ -273,15 +321,27 @@ def _build_day_timeline(plan: Dict[str, Any], shared_state: Dict[str, Any]) -> L
     preferences = shared_state.get("preferences") or {}
     schedule_prefs = preferences.get("schedule") or {}
     workout_prefs = preferences.get("workout") or {}
+    daily_prefs = preferences.get("daily_planner") or {}
+    fasted_time = daily_prefs.get("fasted_cardio_time")
 
     wake_time = schedule_prefs.get("typical_wake_time")
+    training_time = workout_prefs.get("preferred_training_time") or "15:00"
+    fasted_time = daily_prefs.get("fasted_cardio_time")
+    if fasted_time and ":" not in fasted_time:
+        fasted_time = _resolve_named_time(fasted_time, wake_time, training_time, "09:00")
+
     if wake_time:
         events.append({"time": wake_time, "label": "Wake up", "detail": ""})
+
+    if fasted_time:
+        events.append(
+            {"time": fasted_time, "label": "Fasted cardio", "detail": "Cardio"}
+        )
 
     fasted_notes = plan.get("messages", {}).get("workout") or ""
     workout_block = plan.get("workout", {})
     if workout_block.get("planned"):
-        time_str = workout_prefs.get("preferred_training_time") or "15:00"
+        time_str = training_time
         focus = workout_block.get("focus") or "Workout session"
         label = f"{focus}"
         if fasted_notes:
@@ -290,9 +350,14 @@ def _build_day_timeline(plan: Dict[str, Any], shared_state: Dict[str, Any]) -> L
 
     nutrition = plan.get("nutrition") or {}
     meals = nutrition.get("meals") if isinstance(nutrition.get("meals"), list) else []
+    first_meal_time = None
     for meal in meals:
-        time_str = meal.get("time") or ""
+        time_str = (meal.get("time") or "").strip()
         name = meal.get("name") or "Meal"
+        if ":" not in time_str:
+            time_str = _resolve_named_time(time_str, wake_time, training_time, "12:00")
+        if first_meal_time is None:
+            first_meal_time = time_str
         events.append(
             {
                 "time": time_str or "12:00",
@@ -304,7 +369,11 @@ def _build_day_timeline(plan: Dict[str, Any], shared_state: Dict[str, Any]) -> L
     supplements_block = plan.get("supplements") or {}
     protocol = supplements_block.get("protocol") or []
     for block in protocol:
-        time_str = block.get("time") or ""
+        time_label = (block.get("time") or "").strip()
+        time_str = time_label or "06:00"
+        if ":" not in time_label:
+            default_slot = first_meal_time or wake_time or "06:00"
+            time_str = _resolve_named_time(time_label, wake_time, training_time, default_slot)
         items = block.get("items") or []
         if not items:
             continue
