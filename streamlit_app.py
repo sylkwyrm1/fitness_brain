@@ -24,6 +24,7 @@ from expert_core import (
     load_json,
     save_json,
     NUTRITION_FILE,
+    RECIPES_FILE,
 )
 
 try:
@@ -1347,8 +1348,8 @@ def render_kitchen(shared_state: Dict[str, Any]) -> None:
     st.header("Kitchen")
     st.caption("Browse recipes, manage pantry staples, and prep your shopping list.")
 
-    recipes_tab, pantry_tab, shopping_tab = st.tabs(
-        ["Recipes", "Pantry", "Shopping List"]
+    recipes_tab, recipe_db_tab, pantry_tab, shopping_tab = st.tabs(
+        ["Recipes", "Recipe Database", "Pantry", "Shopping List"]
     )
 
     with recipes_tab:
@@ -1363,6 +1364,68 @@ def render_kitchen(shared_state: Dict[str, Any]) -> None:
         else:
             st.info("No recipes saved yet.")
         st.caption("Use the Recipes expert in the hub to add or edit entries.")
+
+    with recipe_db_tab:
+        recipes_state = shared_state.get("recipes") or {}
+        recipes = recipes_state.get("recipes", [])
+        st.subheader("Recipe Database")
+        if not recipes:
+            st.info("No recipes saved yet. Chat with the Recipes expert to create one.")
+        else:
+            id_to_recipe = {r.get("id"): r for r in recipes if r.get("id")}
+            labels = [
+                f"{(r.get('name') or r.get('id') or 'Recipe')} ({rid})"
+                for rid, r in id_to_recipe.items()
+            ]
+            selected_label = st.selectbox(
+                "Select a recipe",
+                options=labels,
+            )
+            selected_id = None
+            for rid, r in id_to_recipe.items():
+                label = f"{(r.get('name') or r.get('id') or 'Recipe')} ({rid})"
+                if label == selected_label:
+                    selected_id = rid
+                    selected_recipe = r
+                    break
+
+            if selected_id:
+                st.write(f"**Meal type:** {selected_recipe.get('meal_type', '-')}")
+                st.write(f"**Tags:** {', '.join(selected_recipe.get('tags') or []) or '—'}")
+                macros = selected_recipe.get("per_serving") or {}
+                st.write(
+                    f"**Per serving macros:** "
+                    f"{macros.get('calories', '-') } kcal, "
+                    f"P {macros.get('protein_g', '-')}, "
+                    f"C {macros.get('carbs_g', '-')}, "
+                    f"F {macros.get('fat_g', '-')}"
+                )
+                new_name = st.text_input(
+                    "Rename recipe",
+                    value=selected_recipe.get("name", ""),
+                    key=f"rename_{selected_id}",
+                )
+                if st.button("Save recipe name", key=f"rename_btn_{selected_id}"):
+                    if not new_name.strip():
+                        st.warning("Please provide a non-empty name.")
+                    else:
+                        recipes_data = load_json(
+                            RECIPES_FILE, {"schema_version": 1, "recipes": []}
+                        )
+                        updated = False
+                        for recipe in recipes_data.get("recipes", []):
+                            if recipe.get("id") == selected_id:
+                                recipe["name"] = new_name.strip()
+                                updated = True
+                                break
+                        if updated:
+                            save_json(RECIPES_FILE, recipes_data)
+                            shared_state["recipes"] = recipes_data
+                            st.success(
+                                "Recipe renamed. Experts and planners will use the new name automatically."
+                            )
+                        else:
+                            st.error("Could not find that recipe in recipes.json.")
 
     with pantry_tab:
         pantry_state = shared_state.get("pantry") or {}
