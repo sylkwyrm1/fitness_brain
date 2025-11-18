@@ -882,11 +882,12 @@ Instead, you coordinate the user's existing files:
 - preferences.json (shared_state["preferences"]) capturing global diet styles, fasting/caffeine rules, typical wake/sleep windows, and other cross-domain notes the planner must respect.
 
 Key responsibilities
-- Determine training days using the existing data in this order:
-  1. shared_state["preferences"]["workout"]["preferred_training_days"], if present.
-  2. shared_state["workout"]["days"] (the template day keys) if no preference list exists.
-  3. If planner.json already has entries for the requested period, keep those day_role assignments unless the user explicitly asks to change them.
-  You must not invent a new pattern if the user and Workout Planner already agreed on one.
+  - Determine training days using the existing data in this order:
+    1. shared_state["preferences"]["workout"]["preferred_training_days"], if present.
+    2. shared_state["workout"]["days"] (the template day keys) if no preference list exists.
+    3. If planner.json already has entries for the requested period, keep those day_role assignments unless the user explicitly asks to change them.
+    You must not invent a new pattern if the user and Workout Planner already agreed on one.
+  - If planner.json shows a different pattern than the preferences/workout template, explicitly ask the user which to keep and default to the template unless they confirm the change.
 - The user may ask to "plan next week", "plan next month", "plan November 2025", etc.
   Choose the correct target period relative to the actual current date provided to you (see additional system note) unless they specify exact dates.
 - When planning a MONTH (primary flow):
@@ -1083,6 +1084,18 @@ def start_expert_session(expert_key: str) -> Tuple[List[Dict[str, str]], str, bo
                 "You may use this for coordination and safety checks but only your own domain\n"
                 "should be modified when saving.\n\n"
                 + json.dumps(shared_state)
+            ),
+        }
+    )
+
+    today_str = date.today().isoformat()
+    messages.append(
+        {
+            "role": "system",
+            "content": (
+                "Today's real date is "
+                + today_str
+                + ". Whenever the user references 'today', 'tomorrow', or future spans such as 'next week', you MUST interpret them relative to this date."
             ),
         }
     )
