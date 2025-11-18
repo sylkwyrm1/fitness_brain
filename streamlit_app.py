@@ -409,7 +409,11 @@ def render_daily_planner(selected_date: date):
 
 
 def _render_expert_conversation_block(
-    expert_key: str, heading: str, chat_key: str, button_key: str
+    expert_key: str,
+    heading: str,
+    chat_key: str,
+    button_key: str,
+    enable_save: bool = True,
 ) -> None:
     global shared_state
 
@@ -440,7 +444,9 @@ def _render_expert_conversation_block(
         session_store[expert_key]["messages"] = new_messages
         st.rerun()
 
-    if st.button("Save plan (equivalent to :save)", key=button_key):
+    if st.button(
+        "Save plan (equivalent to :save)", key=button_key, disabled=not enable_save
+    ):
         new_messages, assistant_text, saved = run_expert_turn(
             expert_key, messages, ":save"
         )
@@ -1167,11 +1173,16 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
         else:
             st.info("No workout template saved yet. Visit the Workout expert in the hub to create one.")
         st.markdown("---")
+        confirm_workout_plan = st.checkbox(
+            "I'm happy with this schedule; enable save",
+            key="workout_planner_confirm",
+        )
         _render_expert_conversation_block(
             "workout_planner",
             "Chat with Workout Planner",
             chat_key="chat_workout_planner_tab",
             button_key="save_workout_planner_tab",
+            enable_save=confirm_workout_plan,
         )
 
     with meal_tab:
@@ -1229,11 +1240,16 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
         else:
             st.info("No nutrition plan saved yet. Chat with the Nutrition expert to build one.")
         st.markdown("---")
+        confirm_meal_plan = st.checkbox(
+            "I'm happy with this meal rotation; enable save",
+            key="meal_planner_confirm",
+        )
         _render_expert_conversation_block(
             "meal_planner",
             "Chat with Meal Planner",
             chat_key="chat_meal_planner_tab",
             button_key="save_meal_planner_tab",
+            enable_save=confirm_meal_plan,
         )
 
     with calendar_tab:
@@ -1248,11 +1264,16 @@ def render_planners(shared_state: Dict[str, Any]) -> None:
                 "No calendar plan saved yet. Use the Planner expert to map workouts, meals, and supplements onto specific dates."
             )
         st.markdown("---")
+        confirm_scheduler = st.checkbox(
+            "I'm happy with this calendar; enable save",
+            key="scheduler_confirm",
+        )
         _render_expert_conversation_block(
             "planner",
             "Chat with Scheduler",
             chat_key="chat_scheduler_tab",
             button_key="save_scheduler_tab",
+            enable_save=confirm_scheduler,
         )
 
 

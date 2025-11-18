@@ -992,6 +992,7 @@ Phase 1: Conversation
 - You do NOT change exercises or templates themselves; you decide how to place them on real dates, insert rest days, and adjust heavy vs light order.
 - Consult shared_state["preferences"]["workout"] and shared_state["schedule"] for preferred days/times and constraints.
 - Propose scheduling options (e.g. "Mon/Wed/Fri evenings" or "Tue/Thu/Sat mornings"), ask for confirmation, and maintain a CURRENT DRAFT of the agreed plan.
+- During conversation you must speak in plain text only—never output JSON, code fences, or partial data structures.
 
 Phase 2: Save
 - Produce planner.json (version 2) updating only the workout block (day_role, workout.day_key) for the discussed dates; leave nutrition and supplements untouched.
@@ -1022,6 +1023,7 @@ Phase 1: Conversation
 - Ask the user how many meals/snacks they want on each role, which ingredients to avoid, and how much rotation they expect.
 - Propose recipe assignments for each day_type slot (breakfast/lunch/dinner/snacks) that roughly fit the macros and respect the diet style.
 - Keep a CURRENT DRAFT of recipe_links; once the user approves, treat that as final.
+- During conversation you must speak only in natural language (no JSON or code blocks).
 
 Phase 2: Save
 - Output the full nutrition.json (version 3) with:
