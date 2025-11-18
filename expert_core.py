@@ -323,6 +323,7 @@ Output ONLY valid JSON. No extra text.""",
     "workout": {
         "description": "Workout Expert",
         "file": WORKOUT_FILE,
+        "model": "gpt-4o",
         "system_prompt": """You are the Workout Expert for a single user's long-term fitness system.
 
 Phase 1: Conversation
@@ -445,6 +446,7 @@ Output ONLY valid JSON. No extra text.""",
     "nutrition": {
         "description": "Nutrition Expert",
         "file": NUTRITION_FILE,
+        "model": "gpt-4o",
         "system_prompt": """You are the Nutrition & Meal Planning Expert.
 
 Phase 1: Conversation
@@ -615,6 +617,7 @@ Output:
     "supplements": {
         "description": "Supplements Expert",
         "file": SUPPLEMENTS_FILE,
+        "model": "gpt-4o",
         "system_prompt": """You are the Supplements Expert.
 
 Phase 1: Conversation
@@ -1092,8 +1095,10 @@ def start_expert_session(expert_key: str) -> Tuple[List[Dict[str, str]], str, bo
             }
         )
 
+    model_name = expert.get("model", "gpt-4o-mini")
+
     greeting_completion = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model_name,
         messages=messages
         + [
             {
@@ -1132,9 +1137,11 @@ def run_save_summary(
         {"role": "user", "content": expert["json_save_instruction"]},
     ]
 
+    model_name = expert.get("model", "gpt-4o-mini")
+
     try:
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model_name,
             messages=save_messages,
         )
     except Exception as exc:
@@ -1176,13 +1183,16 @@ def run_expert_turn(
     if lower == ":back":
         return messages, "", False
 
+    expert = EXPERTS[expert_key]
+    model_name = expert.get("model", "gpt-4o-mini")
+
     if lower == ":save":
         success, text = run_save_summary(expert_key, messages)
         return messages, text, success
 
     messages.append({"role": "user", "content": stripped})
     completion = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model_name,
         messages=messages,
     )
     reply = completion.choices[0].message.content.strip()
