@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from backend_client import get_shared_state as backend_get_shared_state
 from preferences_manager import load_preferences, set_pref
 from state_utils import load_workout_history
 # Load API key from .env
@@ -44,7 +45,16 @@ def save_json(path, data):
 
 
 def load_shared_state() -> Dict[str, Any]:
-    """Load the saved state for all experts."""
+    """
+    Load the saved state for all experts.
+
+    When BACKEND_URL + credentials are configured, prefer the backend's /me/shared-state
+    for the current user; otherwise fall back to local JSON files.
+    """
+    backend_state = backend_get_shared_state()
+    if isinstance(backend_state, dict) and backend_state:
+        return backend_state
+
     return {
         "biometrics": load_json(BIOMETRICS_FILE, default={}),
         "workout": load_json(WORKOUT_FILE, default={}),
