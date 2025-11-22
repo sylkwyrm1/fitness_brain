@@ -16,6 +16,12 @@ _session = requests.Session()
 _token: Optional[str] = None
 
 
+def set_token(token: str) -> None:
+    """Override the cached token (used by UI logins)."""
+    global _token
+    _token = token
+
+
 def _get_token() -> Optional[str]:
     """Login once and cache the access token."""
     global _token

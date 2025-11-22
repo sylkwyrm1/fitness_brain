@@ -2,30 +2,34 @@
 # Run locally with:
 #   streamlit run streamlit_app.py
 
-import time
 import json
+import os
+import time
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from shopping_list import (
-    load_recipes,
-    generate_shopping_list_for_plan,
-    generate_shopping_list_from_nutrition,
-)
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
+from dotenv import load_dotenv
+from shopping_list import (
+    generate_shopping_list_for_plan,
+    generate_shopping_list_from_nutrition,
+    load_recipes,
+)
 
 from daily_planner import get_daily_plan
 from expert_core import (
     EXPERTS,
-    start_expert_session,
-    run_expert_turn,
-    load_json,
-    save_json,
     NUTRITION_FILE,
     RECIPES_FILE,
+    load_json,
+    run_expert_turn,
+    save_json,
+    start_expert_session,
 )
+from backend_client import set_token as backend_set_token
 
 try:
     from expert_core import build_shared_state
@@ -50,6 +54,13 @@ except ImportError:
         )
 from workout_log import append_workout_log_row, load_workout_log
 from state_utils import load_workout_history
+
+load_dotenv()
+BACKEND_URL = os.getenv("BACKEND_URL") or st.secrets.get("BACKEND_URL", None)
+DEFAULT_BACKEND_EMAIL = os.getenv("BACKEND_EMAIL") or st.secrets.get("BACKEND_EMAIL", "")
+DEFAULT_BACKEND_PASSWORD = os.getenv("BACKEND_PASSWORD") or st.secrets.get(
+    "BACKEND_PASSWORD", ""
+)
 
 
 def _planned_reps_to_int(val) -> int:
@@ -225,10 +236,51 @@ def update_current_index_after_completion(state: Dict[str, Any]) -> None:
 
 st.set_page_config(page_title="Fitness Brain - Daily Planner", layout="wide")
 
-shared_state = build_shared_state()
-selected_schedule_date = st.session_state.get("scheduler_selected_date", date.today())
+
+def _login_to_backend(email: str, password: str) -> bool:
+    """Attempt to log in to the backend and cache the token for this session."""
+    if not BACKEND_URL:
+        st.error("BACKEND_URL is not configured.")
+        return False
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/auth/login",
+            json={"email": email, "password": password},
+            timeout=10,
+        )
+        if resp.ok:
+            token = resp.json().get("access_token")
+            if token:
+                st.session_state["auth_token"] = token
+                st.session_state["auth_email"] = email
+                backend_set_token(token)
+                return True
+            st.error("Login failed: token missing.")
+            return False
+        st.error(f"Login failed: {resp.status_code}")
+        return False
+    except Exception as exc:
+        st.error(f"Login error: {exc}")
+        return False
+
+
 with st.sidebar:
     st.title("Fitness Brain")
+    st.subheader("Login")
+    if "auth_token" not in st.session_state:
+        login_email = st.text_input("Email", value=DEFAULT_BACKEND_EMAIL, key="login_email")
+        login_password = st.text_input(
+            "Password", type="password", value=DEFAULT_BACKEND_PASSWORD, key="login_password"
+        )
+        if st.button("Sign in", key="login_button"):
+            _login_to_backend(login_email, login_password)
+    else:
+        st.write(f"Signed in as {st.session_state.get('auth_email', '')}")
+        if st.button("Sign out", key="logout_button"):
+            st.session_state.pop("auth_token", None)
+            st.session_state.pop("auth_email", None)
+            backend_set_token("")
+
     mode = st.radio(
         "Workspace",
         options=[
@@ -241,13 +293,17 @@ with st.sidebar:
         ],
         index=0,
     )
-    if mode == "Scheduler":
-        selected_schedule_date = st.date_input(
-            "Select schedule date",
-            value=selected_schedule_date,
-            key="scheduler_date_input",
-        )
-        st.session_state["scheduler_selected_date"] = selected_schedule_date
+
+selected_schedule_date = st.session_state.get("scheduler_selected_date", date.today())
+if mode == "Scheduler":
+    selected_schedule_date = st.date_input(
+        "Select schedule date",
+        value=selected_schedule_date,
+        key="scheduler_date_input",
+    )
+    st.session_state["scheduler_selected_date"] = selected_schedule_date
+
+shared_state = build_shared_state()
 
 
 def _parse_time_to_minutes(time_str: str | None) -> int:
@@ -446,6 +502,7 @@ def render_daily_planner(selected_date: date):
             st.info(messages.get("biometrics", "No biometrics information available."))
 
     workout = plan.get("workout")
+    
     with st.expander("Workout", expanded=True):
         if workout and workout.get("planned"):
             source = workout.get("source")
