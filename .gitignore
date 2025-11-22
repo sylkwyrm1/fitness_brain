@@ -13,6 +13,7 @@ supplements.json
 recipes.json
 pantry.json
 planner.json
+council.json
 
 data/raw/workout_log.csv
 data/processed/workout_history.json
