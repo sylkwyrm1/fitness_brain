@@ -264,16 +264,48 @@ def _login_to_backend(email: str, password: str) -> bool:
         return False
 
 
+def _register_backend(email: str, password: str) -> bool:
+    """Create a new backend user account."""
+    if not BACKEND_URL:
+        st.error("BACKEND_URL is not configured.")
+        return False
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/auth/register",
+            json={"email": email, "password": password},
+            timeout=10,
+        )
+        if resp.status_code == 201:
+            st.success("Account created. You can sign in now.")
+            return True
+        if resp.status_code == 400:
+            st.error("Account already exists for that email.")
+            return False
+        st.error(f"Registration failed: {resp.status_code}")
+        return False
+    except Exception as exc:
+        st.error(f"Registration error: {exc}")
+        return False
+
+
 with st.sidebar:
     st.title("Fitness Brain")
-    st.subheader("Login")
+    st.subheader("Account")
     if "auth_token" not in st.session_state:
-        login_email = st.text_input("Email", value=DEFAULT_BACKEND_EMAIL, key="login_email")
-        login_password = st.text_input(
-            "Password", type="password", value=DEFAULT_BACKEND_PASSWORD, key="login_password"
-        )
-        if st.button("Sign in", key="login_button"):
-            _login_to_backend(login_email, login_password)
+        auth_mode = st.radio("Select", ["Login", "Register"], horizontal=True, key="auth_mode")
+        if auth_mode == "Login":
+            login_email = st.text_input("Email", value=DEFAULT_BACKEND_EMAIL, key="login_email")
+            login_password = st.text_input(
+                "Password", type="password", value=DEFAULT_BACKEND_PASSWORD, key="login_password"
+            )
+            if st.button("Sign in", key="login_button"):
+                _login_to_backend(login_email, login_password)
+        else:
+            reg_email = st.text_input("Email", value="", key="register_email")
+            reg_password = st.text_input("Password", type="password", value="", key="register_password")
+            if st.button("Create account", key="register_button"):
+                if _register_backend(reg_email, reg_password):
+                    _login_to_backend(reg_email, reg_password)
     else:
         st.write(f"Signed in as {st.session_state.get('auth_email', '')}")
         if st.button("Sign out", key="logout_button"):
