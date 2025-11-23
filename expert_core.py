@@ -8,7 +8,10 @@ from typing import Any, Dict, List, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from backend_client import get_shared_state as backend_get_shared_state
+from backend_client import (
+    get_shared_state as backend_get_shared_state,
+    save_workout_plan as backend_save_workout_plan,
+)
 from preferences_manager import load_preferences, set_pref
 from state_utils import load_workout_history
 # Load API key from .env
@@ -41,6 +44,12 @@ def load_json(path: str, default=None):
 
 
 def save_json(path, data):
+    # If writing the workout plan and backend is configured, persist there too
+    if path == WORKOUT_FILE:
+        try:
+            backend_save_workout_plan(data)
+        except Exception:
+            pass
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 

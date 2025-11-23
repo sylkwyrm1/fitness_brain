@@ -34,3 +34,11 @@ class BiometricsData(BaseModel):
 
 class BiometricsOut(BiometricsData):
     pass
+
+
+class WorkoutPlanData(BaseModel):
+    data: Dict[str, Any]
+
+
+class WorkoutPlanOut(WorkoutPlanData):
+    pass

@@ -34,3 +34,11 @@ class BiometricsProfile(Base, TimestampMixin):
     data_json = Column(Text, nullable=False)
 
     user = relationship("User", back_populates="biometrics")
+
+
+class WorkoutPlan(Base, TimestampMixin):
+    __tablename__ = "workout_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    data_json = Column(Text, nullable=False)

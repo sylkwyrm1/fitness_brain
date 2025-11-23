@@ -88,3 +88,30 @@ def save_biometrics(data: Dict[str, Any]) -> bool:
         return True
     except Exception:
         return False
+
+
+def save_workout_plan(data: Dict[str, Any]) -> bool:
+    """
+    Save workout plan data to the backend for the current user.
+
+    Returns True on success, False otherwise.
+    """
+    if not BACKEND_URL:
+        return False
+
+    token = _get_token()
+    if not token:
+        return False
+
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        resp = _session.put(
+            f"{BACKEND_URL}/me/workout-plan",
+            json={"data": data},
+            timeout=10,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception:
+        return False
