@@ -1284,7 +1284,12 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
         sex_val = biometrics.get("sex", "")
         sex_index = sex_options.index(sex_val) if sex_val in sex_options else 0
         sex = st.selectbox("Sex", sex_options, index=sex_index)
-        dob = st.date_input("Date of birth", value=_default_dob(), max_value=date.today())
+        dob = st.date_input(
+            "Date of birth",
+            value=_default_dob(),
+            min_value=date(1900, 1, 1),
+            max_value=date.today(),
+        )
         height_cm = st.number_input(
             "Height (cm)", min_value=0, max_value=300, value=int(biometrics.get("height_cm", 0) or 0)
         )
