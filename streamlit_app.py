@@ -363,7 +363,7 @@ with st.sidebar:
         mode = st.radio(
             "Workspace",
             options=[
-                "Concierge",
+                "Profile",
                 "Talk to the Expert",
                 "Planners",
                 "Trackers",
@@ -1797,7 +1797,7 @@ def render_scheduler(selected_date: date) -> None:
     render_daily_planner(selected_date)
 
 
-if mode == "Concierge":
+if mode == "Profile":
     render_concierge(shared_state)
 elif mode == "Talk to the Expert":
     render_expert_hub(shared_state)
