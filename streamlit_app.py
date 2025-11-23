@@ -29,7 +29,7 @@ from expert_core import (
     save_json,
     start_expert_session,
 )
-from backend_client import set_token as backend_set_token
+from backend_client import save_biometrics, set_token as backend_set_token
 
 try:
     from expert_core import build_shared_state
@@ -317,7 +317,7 @@ with st.sidebar:
         "Workspace",
         options=[
             "Concierge",
-            "Expert Hub",
+            "Talk to the Expert",
             "Planners",
             "Trackers",
             "Kitchen",
@@ -719,23 +719,10 @@ def _render_expert_conversation_block(
 
 def render_expert_chat():
     st.sidebar.title("Experts")
-    expert_key = st.sidebar.selectbox(
-        "Choose expert",
-        options=[
-            "council",
-            "biometrics",
-            "workout",
-            "nutrition",
-            "supplements",
-            "recipes",
-            "pantry",
-            "planner",
-        ],
-        format_func=lambda x: x.replace("_", " ").title(),
-    )
+    expert_key = "council"
     _render_expert_conversation_block(
         expert_key,
-        f"{expert_key.replace('_', ' ').title()} Expert",
+        "Strategy Council",
         chat_key=f"chat_{expert_key}",
         button_key=f"save_{expert_key}",
     )
@@ -1224,53 +1211,74 @@ def render_workout_history():
 
 
 def render_concierge(shared_state: Dict[str, Any]) -> None:
-    st.header("Concierge")
-    st.caption(
-        "This is your starting point: confirm biometrics, share goals, and capture global preferences."
-    )
+    st.header("My Profile")
+    st.caption("Enter your core details, save, and lock them in. This feeds every expert behind the scenes.")
 
     biometrics = shared_state.get("biometrics") or {}
-    preferences = shared_state.get("preferences") or {}
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Current Profile")
-        if biometrics:
-            st.metric("Goal", biometrics.get("goal", "-"))
-            st.metric("Current weight (kg)", biometrics.get("current_weight_kg", "-"))
-            activity = biometrics.get("activity_pattern", {}) or {}
-            st.metric("Training days/week", activity.get("training_days_per_week", "-"))
-            st.write("**Notes:**", biometrics.get("notes", "—"))
-        else:
-            st.info("No biometrics saved yet. Talk to the Biometrics expert below to create one.")
-
-    with col2:
-        st.subheader("Key Preferences")
-        global_prefs = preferences.get("global") or {}
-        schedule = preferences.get("schedule") or {}
-        planner_prefs = preferences.get("daily_planner") or {}
-        st.write(f"- Diet style: {global_prefs.get('diet_style') or 'not set'}")
-        st.write(f"- Fasting protocol: {global_prefs.get('fasting_protocol') or 'not set'}")
-        st.write(f"- Typical wake time: {schedule.get('typical_wake_time') or 'not set'}")
-        st.write(
-            f"- Respect fasting windows: {'Yes' if planner_prefs.get('respect_fasting_windows') else 'No'}"
+    with st.form("biometrics_form"):
+        name = st.text_input("Name", biometrics.get("name", ""))
+        sex_options = ["", "male", "female", "other"]
+        sex_val = biometrics.get("sex", "")
+        sex_index = sex_options.index(sex_val) if sex_val in sex_options else 0
+        sex = st.selectbox("Sex", sex_options, index=sex_index)
+        age = st.number_input(
+            "Age", min_value=0, max_value=120, value=int(biometrics.get("age", 0) or 0)
         )
-        notes = global_prefs.get("notes")
-        if notes:
-            st.info(notes)
+        height_cm = st.number_input(
+            "Height (cm)", min_value=0, max_value=300, value=int(biometrics.get("height_cm", 0) or 0)
+        )
+        weight_kg = st.number_input(
+            "Current weight (kg)",
+            min_value=0.0,
+            max_value=500.0,
+            value=float(biometrics.get("current_weight_kg", 0.0) or 0.0),
+            step=0.1,
+        )
+        bodyfat = st.number_input(
+            "Body fat %",
+            min_value=0.0,
+            max_value=100.0,
+            value=float(biometrics.get("bodyfat_pct", 0.0) or 0.0),
+            step=0.1,
+        )
+        locked = st.checkbox("Lock these details", value=bool(biometrics.get("locked", False)))
+
+        if st.form_submit_button("Save / Lock"):
+            payload = {
+                "name": name,
+                "sex": sex,
+                "age": age,
+                "height_cm": height_cm,
+                "current_weight_kg": weight_kg,
+                "bodyfat_pct": bodyfat,
+                "locked": locked,
+            }
+            if save_biometrics(payload):
+                st.success("Profile saved.")
+                st.experimental_rerun()
+            else:
+                st.error("Save failed. Check backend connection and credentials.")
 
     st.markdown("---")
-    st.subheader("Talk to the Biometrics & Goals Expert")
-    st.caption(
-        "Use this space to record initial stats, weekly updates, and overall goals. "
-        "Remember to revisit and refresh these numbers regularly."
-    )
-    _render_expert_conversation_block(
-        "biometrics",
-        "Biometrics & Goals",
-        chat_key="chat_biometrics_concierge",
-        button_key="save_biometrics_concierge",
-    )
+    st.subheader("Current Profile")
+    if biometrics:
+        cols = st.columns(3)
+        cols[0].metric("Name", biometrics.get("name", "—"))
+        cols[1].metric("Age", biometrics.get("age", "—"))
+        cols[2].metric("Sex", biometrics.get("sex", "—"))
+
+        cols = st.columns(3)
+        cols[0].metric("Height (cm)", biometrics.get("height_cm", "—"))
+        cols[1].metric("Weight (kg)", biometrics.get("current_weight_kg", "—"))
+        cols[2].metric("Body fat %", biometrics.get("bodyfat_pct", "—"))
+
+        st.write(f"Locked: {'Yes' if biometrics.get('locked') else 'No'}")
+        notes = biometrics.get("notes")
+        if notes:
+            st.info(notes)
+    else:
+        st.info("No biometrics saved yet. Use the form above to create your profile.")
 
 
 def _summarise_domain(shared_state: Dict[str, Any], key: str) -> str:
@@ -1302,29 +1310,14 @@ def _summarise_domain(shared_state: Dict[str, Any], key: str) -> str:
 
 
 def render_expert_hub(shared_state: Dict[str, Any]) -> None:
-    st.header("Expert Hub")
-    st.caption("Review each domain at a glance, then dive into a conversation when you need deeper guidance.")
-
-    expert_groups = [
-        ("council", "Strategy Council"),
-        ("workout", "Workout"),
-        ("nutrition", "Nutrition"),
-        ("supplements", "Supplements"),
-        ("recipes", "Recipes"),
-        ("pantry", "Pantry"),
-        ("planner", "Scheduler"),
-    ]
-
-    cols = st.columns(3)
-    for idx, (key, label) in enumerate(expert_groups):
-        col = cols[idx % len(cols)]
-        with col:
-            st.write(f"**{label}**")
-            st.caption(_summarise_domain(shared_state, key))
-
-    st.divider()
-    st.subheader("Talk to an expert")
-    render_expert_chat()
+    st.header("Talk to the Expert")
+    st.caption("One conversation, all domains considered. The council coordinates behind the scenes.")
+    _render_expert_conversation_block(
+        "council",
+        "Strategy Council",
+        chat_key="chat_council",
+        button_key="save_council",
+    )
 
 
 SLOT_MAP: Dict[str, List[str]] = {
@@ -1725,7 +1718,7 @@ def render_scheduler(selected_date: date) -> None:
 
 if mode == "Concierge":
     render_concierge(shared_state)
-elif mode == "Expert Hub":
+elif mode == "Talk to the Expert":
     render_expert_hub(shared_state)
 elif mode == "Planners":
     render_planners(shared_state)
