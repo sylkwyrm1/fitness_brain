@@ -722,6 +722,7 @@ def render_expert_chat():
     expert_key = st.sidebar.selectbox(
         "Choose expert",
         options=[
+            "council",
             "biometrics",
             "workout",
             "nutrition",
@@ -730,7 +731,7 @@ def render_expert_chat():
             "pantry",
             "planner",
         ],
-        format_func=lambda x: x.capitalize(),
+        format_func=lambda x: x.replace("_", " ").title(),
     )
     _render_expert_conversation_block(
         expert_key,
@@ -1305,6 +1306,7 @@ def render_expert_hub(shared_state: Dict[str, Any]) -> None:
     st.caption("Review each domain at a glance, then dive into a conversation when you need deeper guidance.")
 
     expert_groups = [
+        ("council", "Strategy Council"),
         ("workout", "Workout"),
         ("nutrition", "Nutrition"),
         ("supplements", "Supplements"),
