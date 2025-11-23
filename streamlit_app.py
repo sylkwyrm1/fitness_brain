@@ -1322,7 +1322,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
             }
             if save_biometrics(payload):
                 st.success("Profile saved.")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Save failed. Check backend connection and credentials.")
 
