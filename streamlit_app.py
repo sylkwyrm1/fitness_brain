@@ -61,6 +61,7 @@ DEFAULT_BACKEND_EMAIL = os.getenv("BACKEND_EMAIL") or st.secrets.get("BACKEND_EM
 DEFAULT_BACKEND_PASSWORD = os.getenv("BACKEND_PASSWORD") or st.secrets.get(
     "BACKEND_PASSWORD", ""
 )
+AUTH_CACHE_PATH = os.path.expanduser("~/.fitness_brain_auth.json")
 
 
 def _planned_reps_to_int(val) -> int:
@@ -254,6 +255,9 @@ def _login_to_backend(email: str, password: str) -> bool:
                 st.session_state["auth_token"] = token
                 st.session_state["auth_email"] = email
                 backend_set_token(token)
+                _persist_auth(email, token)
+                st.session_state["auth_source"] = "login"
+                st.success("Signed in successfully.")
                 return True
             st.error("Login failed: token missing.")
             return False
@@ -288,9 +292,53 @@ def _register_backend(email: str, password: str) -> bool:
         return False
 
 
+def _persist_auth(email: str, token: str) -> None:
+    """Store authentication details on device to enable automatic sign-in."""
+    try:
+        with open(AUTH_CACHE_PATH, "w", encoding="utf-8") as auth_file:
+            json.dump({"email": email, "token": token}, auth_file)
+    except Exception as exc:  # pragma: no cover - local disk writes are best-effort
+        st.warning(f"Unable to remember login on this device: {exc}")
+
+
+def _load_cached_auth() -> None:
+    """Load saved authentication details from disk if available."""
+    try:
+        with open(AUTH_CACHE_PATH, "r", encoding="utf-8") as auth_file:
+            data = json.load(auth_file)
+        token = data.get("token")
+        email = data.get("email")
+        if token and email:
+            st.session_state["auth_token"] = token
+            st.session_state["auth_email"] = email
+            st.session_state["auth_source"] = "cache"
+            backend_set_token(token)
+        else:
+            _clear_cached_auth()
+    except FileNotFoundError:
+        return
+    except Exception as exc:  # pragma: no cover - local disk reads are best-effort
+        st.warning(f"Unable to load saved login: {exc}")
+
+
+def _clear_cached_auth() -> None:
+    """Remove cached authentication details when signing out."""
+    st.session_state.pop("auth_token", None)
+    st.session_state.pop("auth_email", None)
+    backend_set_token("")
+    try:
+        if os.path.exists(AUTH_CACHE_PATH):
+            os.remove(AUTH_CACHE_PATH)
+    except Exception as exc:  # pragma: no cover - local disk writes are best-effort
+        st.warning(f"Unable to clear saved login: {exc}")
+
+
 with st.sidebar:
     st.title("Fitness Brain")
     st.subheader("Account")
+    _load_cached_auth()
+    if st.session_state.get("auth_source") == "cache":
+        st.caption("Signed in with saved credentials for this device.")
     if "auth_token" not in st.session_state:
         auth_mode = st.radio("Select", ["Login", "Register"], horizontal=True, key="auth_mode")
         if auth_mode == "Login":
@@ -309,22 +357,27 @@ with st.sidebar:
     else:
         st.write(f"Signed in as {st.session_state.get('auth_email', '')}")
         if st.button("Sign out", key="logout_button"):
-            st.session_state.pop("auth_token", None)
-            st.session_state.pop("auth_email", None)
-            backend_set_token("")
+            _clear_cached_auth()
 
-    mode = st.radio(
-        "Workspace",
-        options=[
-            "Concierge",
-            "Talk to the Expert",
-            "Planners",
-            "Trackers",
-            "Kitchen",
-            "Scheduler",
-        ],
-        index=0,
-    )
+    if "auth_token" in st.session_state:
+        mode = st.radio(
+            "Workspace",
+            options=[
+                "Concierge",
+                "Talk to the Expert",
+                "Planners",
+                "Trackers",
+                "Kitchen",
+                "Scheduler",
+            ],
+            index=0,
+        )
+    else:
+        st.info("Please sign in to access the app.")
+        mode = None
+
+if "auth_token" not in st.session_state:
+    st.stop()
 
 selected_schedule_date = st.session_state.get("scheduler_selected_date", date.today())
 if mode == "Scheduler":
