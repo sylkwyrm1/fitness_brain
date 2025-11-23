@@ -1313,6 +1313,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
                 "current_weight_kg": weight_kg,
                 "bodyfat_pct": bodyfat,
                 "locked": locked,
+                "last_updated": date.today().isoformat(),
             }
             if save_biometrics(payload):
                 st.success("Profile saved.")
@@ -1382,6 +1383,16 @@ def _summarise_domain(shared_state: Dict[str, Any], key: str) -> str:
 def render_expert_hub(shared_state: Dict[str, Any]) -> None:
     st.header("Talk to the Expert")
     st.caption("One conversation, all domains considered. The council coordinates behind the scenes.")
+    biometrics = shared_state.get("biometrics") or {}
+    last_updated = biometrics.get("last_updated")
+    if isinstance(last_updated, str):
+        try:
+            last_dt = date.fromisoformat(last_updated)
+            days_since = (date.today() - last_dt).days
+            if days_since > 7:
+                st.warning(f"It has been {days_since} days since you updated your profile. Consider checking in.")
+        except Exception:
+            pass
     _render_expert_conversation_block(
         "council",
         "Strategy Council",
