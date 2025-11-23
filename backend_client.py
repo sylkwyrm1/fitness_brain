@@ -61,3 +61,30 @@ def get_shared_state() -> Optional[Dict[str, Any]]:
         return resp.json()
     except Exception:
         return None
+
+
+def save_biometrics(data: Dict[str, Any]) -> bool:
+    """
+    Save biometrics data to the backend for the current user.
+
+    Returns True on success, False otherwise.
+    """
+    if not BACKEND_URL:
+        return False
+
+    token = _get_token()
+    if not token:
+        return False
+
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        resp = _session.put(
+            f"{BACKEND_URL}/me/biometrics",
+            json={"data": data},
+            timeout=10,
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception:
+        return False
