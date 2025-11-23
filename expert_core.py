@@ -1177,6 +1177,26 @@ def start_expert_session(expert_key: str) -> Tuple[List[Dict[str, str]], str, bo
         }
     )
 
+    # For the council orchestrator, provide a short map of the other expert remits
+    if expert_key == "council":
+        other_roles = []
+        for k, v in EXPERTS.items():
+            if k == "council":
+                continue
+            desc = v.get("description") or k
+            other_roles.append(f"- {k}: {desc}")
+        if other_roles:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "You coordinate these domain experts behind the scenes. "
+                        "Use their remit to reason and ask only what is needed:\n"
+                        + "\n".join(other_roles)
+                    ),
+                }
+            )
+
     today_str = date.today().isoformat()
     messages.append(
         {
