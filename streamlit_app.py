@@ -1278,6 +1278,12 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
                 return date(1990, 1, 1)
         return date(1990, 1, 1)
 
+    def _compute_age(dob_dt: date) -> int:
+        try:
+            return int((date.today() - dob_dt).days // 365.25)
+        except Exception:
+            return 0
+
     with st.form("biometrics_form"):
         name = st.text_input("Name", biometrics.get("name", ""))
         sex_options = ["", "male", "female", "other"]
@@ -1314,6 +1320,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
                 "name": name,
                 "sex": sex,
                 "dob": dob.isoformat(),
+                "age": _compute_age(dob),
                 "height_cm": height_cm,
                 "current_weight_kg": weight_kg,
                 "bodyfat_pct": bodyfat,
@@ -1338,7 +1345,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
             if isinstance(dob_val, str):
                 dob_dt = date.fromisoformat(dob_val)
                 dob_text = dob_dt.isoformat()
-                age_text = int((date.today() - dob_dt).days // 365.25)
+                age_text = _compute_age(dob_dt)
         except Exception:
             pass
         cols[1].metric("Date of birth", dob_text)
