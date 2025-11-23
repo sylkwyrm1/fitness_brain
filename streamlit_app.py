@@ -1269,15 +1269,22 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
 
     biometrics = shared_state.get("biometrics") or {}
 
+    def _default_dob() -> date:
+        dob_raw = biometrics.get("dob")
+        if isinstance(dob_raw, str):
+            try:
+                return date.fromisoformat(dob_raw)
+            except Exception:
+                return date(1990, 1, 1)
+        return date(1990, 1, 1)
+
     with st.form("biometrics_form"):
         name = st.text_input("Name", biometrics.get("name", ""))
         sex_options = ["", "male", "female", "other"]
         sex_val = biometrics.get("sex", "")
         sex_index = sex_options.index(sex_val) if sex_val in sex_options else 0
         sex = st.selectbox("Sex", sex_options, index=sex_index)
-        age = st.number_input(
-            "Age", min_value=0, max_value=120, value=int(biometrics.get("age", 0) or 0)
-        )
+        dob = st.date_input("Date of birth", value=_default_dob(), max_value=date.today())
         height_cm = st.number_input(
             "Height (cm)", min_value=0, max_value=300, value=int(biometrics.get("height_cm", 0) or 0)
         )
@@ -1301,7 +1308,7 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
             payload = {
                 "name": name,
                 "sex": sex,
-                "age": age,
+                "dob": dob.isoformat(),
                 "height_cm": height_cm,
                 "current_weight_kg": weight_kg,
                 "bodyfat_pct": bodyfat,
@@ -1318,8 +1325,18 @@ def render_concierge(shared_state: Dict[str, Any]) -> None:
     if biometrics:
         cols = st.columns(3)
         cols[0].metric("Name", biometrics.get("name", "—"))
-        cols[1].metric("Age", biometrics.get("age", "—"))
-        cols[2].metric("Sex", biometrics.get("sex", "—"))
+        dob_val = biometrics.get("dob")
+        dob_text = "—"
+        age_text = "—"
+        try:
+            if isinstance(dob_val, str):
+                dob_dt = date.fromisoformat(dob_val)
+                dob_text = dob_dt.isoformat()
+                age_text = int((date.today() - dob_dt).days // 365.25)
+        except Exception:
+            pass
+        cols[1].metric("Date of birth", dob_text)
+        cols[2].metric("Age", age_text)
 
         cols = st.columns(3)
         cols[0].metric("Height (cm)", biometrics.get("height_cm", "—"))
